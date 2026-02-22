@@ -1,6 +1,5 @@
-from fastapi import FastApi
-
-app = FastApi(
+from fastapi import FastAPI
+app = FastAPI(
     title="InvoiceTrack",
     description="Personal time-tracking and invoice generation service",
     version="0.1.0",
