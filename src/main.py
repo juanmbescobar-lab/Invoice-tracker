@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+
 app = FastAPI(
     title="InvoiceTrack",
     description="Personal time-tracking and invoice generation service",
