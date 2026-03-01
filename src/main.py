@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from src.api.expenses import router as expenses_router
 from src.api.sessions import router as sessions_router
 from src.core.database import Base, engine
 
@@ -21,6 +22,7 @@ app = FastAPI(
 )
 
 app.include_router(sessions_router)
+app.include_router(expenses_router)
 
 
 @app.get("/health")
