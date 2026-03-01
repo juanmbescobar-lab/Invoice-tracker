@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,9 +53,7 @@ async def clock_out(db: AsyncSession) -> WorkSession:
     return active
 
 
-async def get_sessions_by_date_range(
-    db: AsyncSession, start: date, end: date
-) -> list[WorkSession]:
+async def get_sessions_by_date_range(db, start, end):
     """Get all sessions within a date range."""
     query = (
         select(WorkSession)
