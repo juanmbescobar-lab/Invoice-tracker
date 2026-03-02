@@ -1,10 +1,17 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import settings
 from src.models.work_session import WorkSession
 from src.services.billing import calculate_hours, round_up_quarter
+
+
+def now_local() -> datetime:
+    """Get current datetime in configured timezone."""
+    return datetime.now(ZoneInfo(settings.app_timezone))
 
 
 async def get_active_session(db: AsyncSession) -> WorkSession | None:
@@ -20,7 +27,7 @@ async def clock_in(db: AsyncSession) -> WorkSession:
     if active:
         raise ValueError("Already clocked in. Clock out first.")
 
-    now = datetime.now(tz=None)
+    now = now_local()
     session = WorkSession(
         date=now.date(),
         clock_in=now.time(),
@@ -37,7 +44,7 @@ async def clock_out(db: AsyncSession) -> WorkSession:
     if not active:
         raise ValueError("No active session. Clock in first.")
 
-    now = datetime.now(tz=None)
+    now = now_local()
     clock_in_dt = datetime.combine(active.date, active.clock_in)
     clock_out_dt = datetime.combine(now.date(), now.time())
 
