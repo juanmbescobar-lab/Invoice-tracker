@@ -37,3 +37,19 @@ app.include_router(telegram_router)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/status")
+async def status():
+    from src.core.config import settings
+
+    return {
+        "app": "InvoiceTrack",
+        "version": "0.1.0",
+        "environment": settings.app_env,
+        "timezone": settings.app_timezone,
+        "rate": f"${settings.hourly_rate:.2f} {settings.currency}/hour",
+        "telegram_configured": bool(settings.telegram_bot_token),
+        "scheduler_day": settings.invoice_day,
+        "scheduler_time": f"{settings.invoice_hour}:{settings.invoice_minute:02d}",
+    }
