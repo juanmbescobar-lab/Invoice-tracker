@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 12px;
+            color: #333;
+            padding: 40px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 22px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 12px;
+            color: #555;
+        }
+
+        .bill-to {
+            margin-bottom: 30px;
+        }
+
+        .bill-to h3 {
+            font-size: 13px;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .bill-to p {
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+        }
+
+        thead th {
+            background-color: #f5f5f5;
+            padding: 10px;
+            text-align: left;
+            border-bottom: 2px solid #ddd;
+            font-size: 12px;
+        }
+
+        thead th:last-child {
+            text-align: right;
+        }
+
+        tbody td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            font-size: 12px;
+        }
+
+        tbody td:last-child {
+            text-align: right;
+        }
+
+        .total-row td {
+            font-weight: bold;
+            font-size: 14px;
+            border-top: 2px solid #333;
+            border-bottom: none;
+            padding-top: 12px;
+        }
+
+        .credit td {
+            color: #c0392b;
+        }
+
+        .bank-details {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+
+        .bank-details h3 {
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .bank-details p {
+            font-size: 12px;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>INVOICE #{{ invoice_number }}</h1>
+        <p>CozyHomes Rental</p>
+        <p>QLD 4169</p>
+        <p>ABN 51684990314</p>
+    </div>
+
+    <div class="bill-to">
+        <h3>Bill To:</h3>
+        <p>Juan Manuel Bermudez Escobar</p>
+        <p>4 Styphelia St, Mount Gravatt QLD 4122</p>
+        <p>ABN 41 551 518 760</p>
+        <p>Phone: +61 0490 242 555</p>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Description</th>
+                <th>Amount (AUD)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for line in lines %}
+            <tr {% if line.amount < 0 %}class="credit"{% endif %}>
+                <td>{{ line.description }}</td>
+                <td>{{ "%.2f"|format(line.amount) }}</td>
+            </tr>
+            {% endfor %}
+            <tr class="total-row">
+                <td>Total</td>
+                <td>{{ "%.2f"|format(final_total) }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="bank-details">
+        <h3>Bank Details:</h3>
+        <p>Commonwealth Bank</p>
+        <p>BSB: 064-001</p>
+        <p>Account: 1237 3090</p>
+        <p>Account Name: Juan Manuel Bermudez Escobar</p>
+    </div>
+</body>
+</html>

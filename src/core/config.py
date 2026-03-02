@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     hourly_rate: float = 35.00
     currency: str = "AUD"
     service_description: str = "Laundry and Folding Services"
+    invoice_start_number: int = 1
 
     # Telegram
     telegram_bot_token: str = ""
