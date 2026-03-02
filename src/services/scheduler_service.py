@@ -5,7 +5,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from src.core.config import settings
 from src.core.database import async_session
 from src.services.invoice_service import generate_invoice
-from src.services.pdf_service import generate_invoice_pdf
+from src.services.pdf_service import generate_hours_pdf, generate_invoice_pdf
 from src.services.telegram_service import send_message, send_pdf
 
 
@@ -24,7 +24,7 @@ async def remind_expenses():
 
 
 async def generate_weekly_invoice():
-    """Generate and send the weekly invoice."""
+    """Generate and send the weekly invoice and hours table."""
     today = date.today()
     start = today - timedelta(days=today.weekday())
     end = start + timedelta(days=6)
@@ -32,20 +32,40 @@ async def generate_weekly_invoice():
     async with async_session() as db:
         try:
             result = await generate_invoice(db, start, end)
+            inv_number = result["invoice"]["invoice_number"]
+            total_hours = result["invoice"]["total_hours"]
 
-            pdf_path = generate_invoice_pdf(
-                invoice_number=result["invoice"]["invoice_number"],
+            # Generate invoice PDF
+            invoice_pdf = generate_invoice_pdf(
+                invoice_number=inv_number,
                 lines=result["lines"],
                 final_total=result["final_total"],
             )
 
+            # Generate hours table PDF
+            hours_pdf = generate_hours_pdf(
+                invoice_number=inv_number,
+                sessions=result["sessions"],
+                total_hours=total_hours,
+                rate=settings.hourly_rate,
+                total_amount=round(total_hours * settings.hourly_rate, 2),
+                date_from=str(start),
+                date_to=str(end),
+            )
+
+            # Send invoice
             caption = (
-                f"✅ Invoice #{result['invoice']['invoice_number']:03d}\n"
+                f"✅ Invoice #{inv_number:03d}\n"
                 f"Period: {start} to {end}\n"
-                f"Hours: {result['invoice']['total_hours']}h\n"
+                f"Hours: {total_hours}h\n"
                 f"Total: ${result['final_total']:.2f} AUD"
             )
-            await send_pdf(pdf_path, caption=caption)
+            await send_pdf(invoice_pdf, caption=caption)
+
+            # Send hours table
+            await send_pdf(
+                hours_pdf, caption=f"📊 Hours detail — Invoice #{inv_number:03d}"
+            )
 
         except ValueError as e:
             await send_message(
