@@ -6,13 +6,20 @@ from src.api.expenses import router as expenses_router
 from src.api.sessions import router as sessions_router
 from src.api.telegram import router as telegram_router
 from src.core.database import Base, engine
+from src.services.scheduler_service import create_scheduler
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    scheduler = create_scheduler()
+    scheduler.start()
+
     yield
+
+    scheduler.shutdown()
 
 
 app = FastAPI(
