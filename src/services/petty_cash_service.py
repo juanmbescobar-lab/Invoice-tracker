@@ -31,15 +31,20 @@ async def topup(db: AsyncSession, amount: float, description: str = "") -> Petty
 
 
 async def spend(db: AsyncSession, amount: float, description: str) -> PettyCash:
-    """Spend from petty cash. Balance may go negative if funds are insufficient."""
+    """Spend from petty cash."""
     if amount <= 0:
         raise ValueError("Spend amount must be positive.")
 
     current = await get_current_balance(db)
+    if amount > current:
+        raise ValueError(
+            f"Insufficient petty cash. Balance: {current}, requested: {amount}"
+        )
+
     movement = PettyCash(
         movement_type="expense",
         amount=amount,
-        balance_after=round(current - amount, 2),
+        balance_after=current - amount,
         description=description,
     )
     db.add(movement)

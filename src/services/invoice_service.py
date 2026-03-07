@@ -50,10 +50,12 @@ async def generate_invoice(db: AsyncSession, start: date, end: date) -> dict:
     expenses_result = await db.execute(expenses_query)
     expenses = list(expenses_result.scalars().all())
 
-    # All expenses appear on the invoice regardless of paid_by.
-    # Petty cash expenses were already deducted from the cash balance when
-    # they were registered via add_expense → spend().
-    total_expenses = sum(e.amount for e in expenses)
+    # Calculate expense totals
+    personal_expenses = [e for e in expenses if e.paid_by == "personal"]
+    petty_cash_expenses = [e for e in expenses if e.paid_by == "petty_cash"]
+
+    personal_total = sum(e.amount for e in personal_expenses)
+    petty_cash_total = sum(e.amount for e in petty_cash_expenses)
 
     # Build invoice lines
     lines = []
@@ -64,20 +66,31 @@ async def generate_invoice(db: AsyncSession, start: date, end: date) -> dict:
         }
     )
 
-    # Every expense becomes its own line item
-    for exp in expenses:
-        label = exp.description
-        if exp.paid_by == "petty_cash":
-            label = f"{exp.description} (Petty Cash)"
+    # Add personal expenses as individual lines
+    for exp in personal_expenses:
         lines.append(
             {
-                "description": label,
+                "description": exp.description,
                 "amount": exp.amount,
             }
         )
 
-    # Final total: hours + all expenses
-    final_total = round(hours_amount + total_expenses, 2)
+    # Credit balance logic
+    credit_balance = 0.0
+    if (
+        petty_cash_total > 0
+        and personal_total > 0
+        and petty_cash_total < personal_total
+    ):
+        credit_balance = -petty_cash_total
+        lines.append(
+            {
+                "description": "Credit Balance",
+                "amount": credit_balance,
+            }
+        )
+    # Final total
+    final_total = round(hours_amount + personal_total + credit_balance, 2)
 
     # Get next invoice number
     invoice_number = await get_next_invoice_number(db)
@@ -89,7 +102,7 @@ async def generate_invoice(db: AsyncSession, start: date, end: date) -> dict:
         date_to=end,
         total_hours=total_hours,
         total_amount=hours_amount,
-        expenses_total=round(total_expenses, 2),
+        expenses_total=round(personal_total + credit_balance, 2),
         final_total=final_total,
         status="draft",
     )

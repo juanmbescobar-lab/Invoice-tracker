@@ -45,17 +45,13 @@ async def test_add_petty_cash_expense(client):
     assert response.json()["expense"]["paid_by"] == "petty_cash"
 
 
-async def test_petty_cash_expense_without_balance_goes_negative(client):
-    # Petty cash expenses are allowed even with no balance — balance goes negative.
+async def test_petty_cash_expense_without_balance_fails(client):
     response = await client.post(
         "/api/expenses",
         json={"description": "Bolsas", "amount": 20.00, "paid_by": "petty_cash"},
     )
-    assert response.status_code == 200
-    assert response.json()["expense"]["paid_by"] == "petty_cash"
-
-    balance = await client.get("/api/petty-cash/balance")
-    assert balance.json()["balance"] == -20.00
+    assert response.status_code == 400
+    assert "Insufficient" in response.json()["detail"]
 
 
 async def test_invalid_paid_by_fails(client):
