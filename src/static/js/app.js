@@ -1,546 +1,524 @@
-/* ============================
-   InvoiceTrack Frontend App
-   ============================ */
+/* ============================================================
+   InvoiceTrack — Frontend Application
+   Consumes the FastAPI REST API with no external dependencies.
+   ============================================================ */
 
+/* ── API layer ── */
 const API = {
-  clockIn:           () => post('/api/clock-in'),
-  clockOut:          () => post('/api/clock-out'),
-  activeSession:     () => get('/api/sessions/active'),
-  sessions:          (start, end) => get(`/api/sessions?start=${start}&end=${end}`),
-  addExpense:        (body) => post('/api/expenses', body),
-  expenses:          (start, end) => get(`/api/expenses?start=${start}&end=${end}`),
-  addTopup:          (body) => post('/api/petty-cash/topup', body),
-  balance:           () => get('/api/petty-cash/balance'),
-  movements:         () => get('/api/petty-cash/movements'),
-  generateInvoice:   (start, end, send) => post(`/api/invoice/generate?start=${start}&end=${end}&send=${send}`),
-  status:            () => get('/status'),
+  clockIn:         ()            => http('POST', '/api/clock-in'),
+  clockOut:        ()            => http('POST', '/api/clock-out'),
+  activeSession:   ()            => http('GET',  '/api/sessions/active'),
+  sessions:        (s, e)        => http('GET',  `/api/sessions?start=${s}&end=${e}`),
+  addExpense:      (body)        => http('POST', '/api/expenses', body),
+  expenses:        (s, e)        => http('GET',  `/api/expenses?start=${s}&end=${e}`),
+  topup:           (body)        => http('POST', '/api/petty-cash/topup', body),
+  balance:         ()            => http('GET',  '/api/petty-cash/balance'),
+  movements:       ()            => http('GET',  '/api/petty-cash/movements'),
+  generateInvoice: (s, e, send)  => http('POST', `/api/invoice/generate?start=${s}&end=${e}&send=${send}`),
+  status:          ()            => http('GET',  '/status'),
 };
 
-/* ========== HTTP Helpers ========== */
-
-async function get(url) {
-  const res = await fetch(url);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || 'Request failed');
-  }
-  return res.json();
-}
-
-async function post(url, body = null) {
-  const opts = {
-    method: 'POST',
+async function http(method, url, body = null) {
+  const res = await fetch(url, {
+    method,
     headers: body ? { 'Content-Type': 'application/json' } : {},
     body: body ? JSON.stringify(body) : undefined,
-  };
-  const res = await fetch(url, opts);
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || 'Request failed');
+    throw new Error(err.detail || `HTTP ${res.status}`);
   }
   return res.json();
 }
 
-/* ========== Toast System ========== */
+/* ── Formatting ── */
+const fmt = {
+  date(str) {
+    if (!str) return '—';
+    const d = new Date(str + 'T00:00:00');
+    return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+  },
+  time(str) {
+    return str ? str.substring(0, 5) : '—';
+  },
+  money(n) {
+    if (n === null || n === undefined) return '—';
+    const abs = Math.abs(n);
+    const s = `$${abs.toFixed(2)}`;
+    return n < 0 ? `−${s}` : s;
+  },
+  duration(secs) {
+    const h = String(Math.floor(secs / 3600)).padStart(2, '0');
+    const m = String(Math.floor((secs % 3600) / 60)).padStart(2, '0');
+    const s = String(secs % 60).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  },
+  weekRange(offset = 0) {
+    const today = new Date();
+    const mon = new Date(today);
+    mon.setDate(today.getDate() - ((today.getDay() + 6) % 7) + offset * 7);
+    const sun = new Date(mon);
+    sun.setDate(mon.getDate() + 6);
+    return {
+      start: mon.toISOString().slice(0, 10),
+      end:   sun.toISOString().slice(0, 10),
+    };
+  },
+  weekLabel(start, end) {
+    const o = { day: 'numeric', month: 'short' };
+    const s = new Date(start + 'T00:00:00').toLocaleDateString('en-AU', o);
+    const e = new Date(end   + 'T00:00:00').toLocaleDateString('en-AU', { ...o, year: 'numeric' });
+    return `${s} – ${e}`;
+  },
+};
 
-const toastContainer = document.getElementById('toast-container');
+/* ── Toast ── */
+const toastStack = document.getElementById('toast-stack');
 
-function showToast(title, message, type = 'info', duration = 4000) {
+function toast(title, msg = '', type = 'info', ms = 4200) {
   const icons = { success: '✅', error: '❌', info: 'ℹ️' };
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.innerHTML = `
-    <span class="toast-icon">${icons[type]}</span>
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `
+    <span class="toast-icon">${icons[type] ?? 'ℹ️'}</span>
     <div class="toast-body">
       <div class="toast-title">${title}</div>
-      ${message ? `<div class="toast-msg">${message}</div>` : ''}
-    </div>
-  `;
-  toastContainer.appendChild(toast);
+      ${msg ? `<div class="toast-msg">${msg}</div>` : ''}
+    </div>`;
+  toastStack.appendChild(el);
   setTimeout(() => {
-    toast.classList.add('removing');
-    toast.addEventListener('animationend', () => toast.remove());
-  }, duration);
+    el.classList.add('removing');
+    el.addEventListener('animationend', () => el.remove(), { once: true });
+  }, ms);
 }
 
-/* ========== Date Utilities ========== */
-
-function formatDate(dateStr) {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
-}
-
-function formatTime(timeStr) {
-  if (!timeStr) return '—';
-  return timeStr.substring(0, 5);
-}
-
-function formatCurrency(amount) {
-  if (amount === null || amount === undefined) return '—';
-  const abs = Math.abs(amount);
-  const formatted = `$${abs.toFixed(2)}`;
-  return amount < 0 ? `−${formatted}` : formatted;
-}
-
-function getWeekBounds(offset = 0) {
-  const today = new Date();
-  const day = today.getDay();
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - ((day + 6) % 7) + offset * 7);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  return {
-    start: monday.toISOString().slice(0, 10),
-    end: sunday.toISOString().slice(0, 10),
-  };
-}
-
-function formatWeekLabel(start, end) {
-  const s = new Date(start + 'T00:00:00');
-  const e = new Date(end + 'T00:00:00');
-  const opts = { day: 'numeric', month: 'short' };
-  return `${s.toLocaleDateString('en-AU', opts)} – ${e.toLocaleDateString('en-AU', { ...opts, year: 'numeric' })}`;
-}
-
-/* ========== Timer State ========== */
-
-let clockInTime = null;
-let timerInterval = null;
-let sessionWeekOffset = 0;
-let expenseWeekOffset = 0;
+/* ── Timer state ── */
+let _clockInTime   = null;
+let _timerInterval = null;
 
 function startTimer(clockInStr) {
-  // clockInStr is e.g. "08:30:00" — combine with today's date
   const today = new Date().toISOString().slice(0, 10);
-  clockInTime = new Date(`${today}T${clockInStr}`);
-  updateTimerDisplay();
-  timerInterval = setInterval(updateTimerDisplay, 1000);
+  _clockInTime = new Date(`${today}T${clockInStr}`);
+  _tickTimer();
+  _timerInterval = setInterval(_tickTimer, 1000);
 }
 
 function stopTimer() {
-  clearInterval(timerInterval);
-  timerInterval = null;
-  clockInTime = null;
-  document.getElementById('tracker-time').textContent = '00:00:00';
-  document.getElementById('tracker-time').classList.remove('running');
+  clearInterval(_timerInterval);
+  _timerInterval = null;
+  _clockInTime   = null;
+  const el = document.getElementById('tracker-time');
+  el.textContent = '00:00:00';
+  el.classList.remove('running');
 }
 
-function updateTimerDisplay() {
-  if (!clockInTime) return;
-  const now = new Date();
-  const diff = Math.floor((now - clockInTime) / 1000);
-  const h = String(Math.floor(diff / 3600)).padStart(2, '0');
-  const m = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
-  const s = String(diff % 60).padStart(2, '0');
+function _tickTimer() {
+  if (!_clockInTime) return;
+  const secs = Math.floor((Date.now() - _clockInTime) / 1000);
   const el = document.getElementById('tracker-time');
-  el.textContent = `${h}:${m}:${s}`;
+  el.textContent = fmt.duration(secs);
   el.classList.add('running');
 }
 
-/* ========== Status Badge ========== */
-
-function setStatusBadge(clockedIn, timeStr = '') {
-  const badge = document.getElementById('status-badge');
+/* ── Status pill ── */
+function setStatus(active, label = '') {
+  const pill = document.getElementById('status-pill');
   const text = document.getElementById('status-text');
-  if (clockedIn) {
-    badge.className = 'status-badge clocked-in';
-    text.textContent = `Clocked in ${timeStr ? 'at ' + timeStr : ''}`;
-  } else {
-    badge.className = 'status-badge';
-    text.textContent = 'Not working';
-  }
+  pill.classList.toggle('active', active);
+  text.textContent = active ? label || 'Working' : 'Not working';
+
+  const badge = document.getElementById('tracker-badge');
+  badge.textContent = active ? '● Active' : '● Idle';
+  badge.style.color = active ? 'var(--accent)' : '';
 }
 
-/* ========== Clock In / Out ========== */
+/* ── Week offset state ── */
+let sessionWeekOff = 0;
+let expenseWeekOff = 0;
+
+/* ══════════════════════════════════════════════════
+   CLOCK IN / OUT
+══════════════════════════════════════════════════ */
 
 async function initTrackerStatus() {
   try {
     const data = await API.activeSession();
     if (data.active) {
-      const timeStr = formatTime(data.session.clock_in);
-      setStatusBadge(true, timeStr);
-      document.getElementById('btn-clock-in').disabled = true;
-      document.getElementById('btn-clock-out').disabled = false;
-      document.getElementById('tracker-sub').textContent = `Started at ${timeStr}`;
+      const timeStr = fmt.time(data.session.clock_in);
+      setStatus(true, `Since ${timeStr}`);
+      setClockState(true, timeStr);
       startTimer(data.session.clock_in);
     } else {
-      setStatusBadge(false);
-      document.getElementById('btn-clock-in').disabled = false;
-      document.getElementById('btn-clock-out').disabled = true;
-      document.getElementById('tracker-sub').textContent = 'No active session';
+      setStatus(false);
     }
   } catch (e) {
-    showToast('Connection error', e.message, 'error');
+    toast('Connection failed', e.message, 'error');
   }
+}
+
+function setClockState(clocked, timeStr = '') {
+  const btnIn  = document.getElementById('btn-clock-in');
+  const btnOut = document.getElementById('btn-clock-out');
+  const meta   = document.getElementById('tracker-meta');
+  btnIn.disabled  = clocked;
+  btnOut.disabled = !clocked;
+  meta.textContent = clocked
+    ? `Session started at ${timeStr} — click Clock Out when done`
+    : 'No active session — clock in to start tracking';
 }
 
 async function clockIn() {
   const btn = document.getElementById('btn-clock-in');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Clocking in…';
+  btn.innerHTML = '<span class="spin"></span>&thinsp;Clocking in…';
   try {
     const data = await API.clockIn();
-    const timeStr = formatTime(data.session.clock_in);
-    setStatusBadge(true, timeStr);
-    document.getElementById('btn-clock-out').disabled = false;
-    document.getElementById('tracker-sub').textContent = `Started at ${timeStr}`;
+    const t = fmt.time(data.session.clock_in);
+    setStatus(true, `Since ${t}`);
+    setClockState(true, t);
     startTimer(data.session.clock_in);
-    showToast('Clocked in', `Session started at ${timeStr}`, 'success');
+    toast('Clocked in', `Session started at ${t}`, 'success');
     loadSessions();
   } catch (e) {
-    showToast('Clock in failed', e.message, 'error');
+    toast('Clock in failed', e.message, 'error');
     btn.disabled = false;
   } finally {
-    btn.innerHTML = '▶ Clock In';
+    btn.innerHTML = '▶&thinsp; Clock In';
   }
 }
 
 async function clockOut() {
   const btn = document.getElementById('btn-clock-out');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Clocking out…';
+  btn.innerHTML = '<span class="spin"></span>&thinsp;Clocking out…';
   try {
     const data = await API.clockOut();
     const s = data.session;
-    setStatusBadge(false);
-    document.getElementById('btn-clock-in').disabled = false;
-    document.getElementById('tracker-sub').textContent = `Last session: ${formatTime(s.clock_in)} – ${formatTime(s.clock_out)} (${s.adjusted_hours}h billed)`;
+    setStatus(false);
+    setClockState(false);
     stopTimer();
-    showToast('Clocked out', `${s.adjusted_hours}h billed — raw: ${parseFloat(s.raw_hours).toFixed(2)}h`, 'success');
+    document.getElementById('tracker-meta').textContent =
+      `Last session: ${fmt.time(s.clock_in)} – ${fmt.time(s.clock_out)} · ${s.adjusted_hours}h billed`;
+    toast('Clocked out', `${s.adjusted_hours}h billed (raw: ${parseFloat(s.raw_hours).toFixed(2)}h)`, 'success');
     loadSessions();
     loadWeekStats();
   } catch (e) {
-    showToast('Clock out failed', e.message, 'error');
+    toast('Clock out failed', e.message, 'error');
     btn.disabled = false;
   } finally {
-    btn.innerHTML = '■ Clock Out';
+    btn.innerHTML = '■&thinsp; Clock Out';
   }
 }
 
-/* ========== Sessions Table ========== */
+/* ══════════════════════════════════════════════════
+   WEEK STATS
+══════════════════════════════════════════════════ */
+
+async function loadWeekStats() {
+  try {
+    const { start, end } = fmt.weekRange(0);
+    const [sess, exps, st] = await Promise.all([
+      API.sessions(start, end),
+      API.expenses(start, end),
+      API.status().catch(() => null),
+    ]);
+
+    const totalH = sess.sessions.reduce((a, s) => a + (s.adjusted_hours || 0), 0);
+    const rate   = st ? parseFloat(st.rate.replace(/[^0-9.]/g, '')) || 35 : 35;
+    const expTot = exps.expenses.reduce((a, e) => a + e.amount, 0);
+
+    document.getElementById('stat-hours').textContent    = totalH.toFixed(2) + 'h';
+    document.getElementById('stat-sessions').textContent = sess.sessions.length;
+    document.getElementById('stat-expenses').textContent = fmt.money(expTot);
+    document.getElementById('stat-amount').textContent   = '$' + (totalH * rate).toFixed(2);
+  } catch (e) {
+    console.warn('Stats load error:', e.message);
+  }
+}
+
+/* ══════════════════════════════════════════════════
+   SESSIONS TABLE
+══════════════════════════════════════════════════ */
 
 async function loadSessions() {
-  const { start, end } = getWeekBounds(sessionWeekOffset);
-  document.getElementById('sessions-week-label').textContent = formatWeekLabel(start, end);
+  const { start, end } = fmt.weekRange(sessionWeekOff);
+  document.getElementById('sessions-week-label').textContent = fmt.weekLabel(start, end);
 
   const tbody = document.getElementById('sessions-tbody');
   const tfoot = document.getElementById('sessions-tfoot');
-  tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted" style="padding:20px">Loading…</td></tr>';
+  tbody.innerHTML = emptyRow(5, '⏳', 'Loading sessions…');
+  tfoot.innerHTML = '';
 
   try {
     const data = await API.sessions(start, end);
-    if (data.sessions.length === 0) {
-      tbody.innerHTML = `
-        <tr><td colspan="5">
-          <div class="empty-state">
-            <span class="empty-icon">📅</span>
-            <p>No sessions for this week</p>
-          </div>
-        </td></tr>`;
-      tfoot.innerHTML = '';
+    if (!data.sessions.length) {
+      tbody.innerHTML = emptyRow(5, '📅', 'No sessions this week');
       return;
     }
 
-    let totalHours = 0;
+    let totalH = 0;
     tbody.innerHTML = data.sessions.map(s => {
-      const hours = s.adjusted_hours ?? '—';
-      if (s.adjusted_hours) totalHours += s.adjusted_hours;
-      const active = !s.clock_out;
+      const active  = !s.clock_out;
+      const adjH    = s.adjusted_hours;
+      if (adjH) totalH += adjH;
       return `
         <tr>
-          <td>${formatDate(s.date)}</td>
-          <td class="td-mono">${formatTime(s.clock_in)}</td>
-          <td class="td-mono">${active ? '<span style="color:var(--success)">● Active</span>' : formatTime(s.clock_out)}</td>
-          <td class="td-mono text-right">${s.raw_hours ? parseFloat(s.raw_hours).toFixed(2) : '—'}</td>
-          <td class="td-bold td-accent text-right">${typeof hours === 'number' ? hours.toFixed(2) : hours}</td>
+          <td class="td-bold">${fmt.date(s.date)}</td>
+          <td class="td-mono">${fmt.time(s.clock_in)}</td>
+          <td>
+            ${active
+              ? '<span class="tag tag-success">● Active</span>'
+              : `<span class="td-mono">${fmt.time(s.clock_out)}</span>`}
+          </td>
+          <td class="td-mono td-right">${s.raw_hours ? parseFloat(s.raw_hours).toFixed(2) : '—'}</td>
+          <td class="td-accent td-bold td-right">${adjH != null ? adjH.toFixed(2) : '—'}</td>
         </tr>`;
     }).join('');
 
     tfoot.innerHTML = `
-      <tr class="tfoot">
-        <td colspan="4" class="text-right">Total Billed Hours</td>
-        <td class="td-accent text-right">${totalHours.toFixed(2)} h</td>
+      <tr>
+        <td colspan="4" class="txt-right" style="font-size:12px;font-weight:600;color:var(--text-muted)">
+          TOTAL BILLED
+        </td>
+        <td class="td-right td-accent">${totalH.toFixed(2)} h</td>
       </tr>`;
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="5" class="text-center" style="color:var(--danger);padding:20px">${e.message}</td></tr>`;
+    tbody.innerHTML = errorRow(5, e.message);
   }
 }
 
-/* ========== Week Stats ========== */
+function prevSessionWeek() { sessionWeekOff--; loadSessions(); }
+function nextSessionWeek() { sessionWeekOff++; loadSessions(); }
 
-async function loadWeekStats() {
-  const { start, end } = getWeekBounds(0);
-  try {
-    const [sessions, expData] = await Promise.all([
-      API.sessions(start, end),
-      API.expenses(start, end),
-    ]);
-
-    const totalHours = sessions.sessions.reduce((a, s) => a + (s.adjusted_hours || 0), 0);
-    const rate = 35; // will be overridden by status
-    const totalAmt = (totalHours * rate).toFixed(2);
-    const expTotal = expData.expenses.reduce((a, e) => a + e.amount, 0);
-
-    document.getElementById('stat-hours').textContent = totalHours.toFixed(2) + 'h';
-    document.getElementById('stat-sessions').textContent = sessions.sessions.length;
-    document.getElementById('stat-expenses').textContent = formatCurrency(expTotal);
-
-    // update rate from status
-    try {
-      const st = await API.status();
-      const rateNum = parseFloat(st.rate.replace(/[^0-9.]/g, ''));
-      if (!isNaN(rateNum)) {
-        const newAmt = (totalHours * rateNum).toFixed(2);
-        document.getElementById('stat-amount').textContent = '$' + newAmt;
-      }
-    } catch (_) {
-      document.getElementById('stat-amount').textContent = '$' + totalAmt;
-    }
-  } catch (e) {
-    console.error('Stats load error:', e);
-  }
-}
-
-/* ========== Expenses ========== */
+/* ══════════════════════════════════════════════════
+   EXPENSES
+══════════════════════════════════════════════════ */
 
 async function loadExpenses() {
-  const { start, end } = getWeekBounds(expenseWeekOffset);
-  document.getElementById('expenses-week-label').textContent = formatWeekLabel(start, end);
+  const { start, end } = fmt.weekRange(expenseWeekOff);
+  document.getElementById('expenses-week-label').textContent = fmt.weekLabel(start, end);
 
   const tbody = document.getElementById('expenses-tbody');
-  tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted" style="padding:20px">Loading…</td></tr>';
+  const tfoot = document.getElementById('expenses-tfoot');
+  tbody.innerHTML = emptyRow(4, '⏳', 'Loading…');
+  tfoot.innerHTML = '';
 
   try {
     const data = await API.expenses(start, end);
-    if (data.expenses.length === 0) {
-      tbody.innerHTML = `
-        <tr><td colspan="4">
-          <div class="empty-state">
-            <span class="empty-icon">🧾</span>
-            <p>No expenses for this week</p>
-          </div>
-        </td></tr>`;
+    if (!data.expenses.length) {
+      tbody.innerHTML = emptyRow(4, '🧾', 'No expenses this week');
       return;
     }
 
     let total = 0;
     tbody.innerHTML = data.expenses.map(e => {
       total += e.amount;
-      const paidClass = e.paid_by === 'petty_cash' ? 'td-warning' : 'td-accent';
-      const paidLabel = e.paid_by === 'petty_cash' ? 'Petty Cash' : 'Personal';
+      const personal = e.paid_by !== 'petty_cash';
       return `
         <tr>
-          <td>${formatDate(e.date)}</td>
+          <td class="td-bold">${fmt.date(e.date)}</td>
           <td>${e.description}</td>
-          <td class="${paidClass}">${paidLabel}</td>
-          <td class="td-bold text-right">${formatCurrency(e.amount)}</td>
+          <td>
+            <span class="tag ${personal ? 'tag-info' : 'tag-warning'}">
+              ${personal ? 'Personal' : 'Petty Cash'}
+            </span>
+          </td>
+          <td class="td-right td-bold">${fmt.money(e.amount)}</td>
         </tr>`;
     }).join('');
 
-    const tfoot = document.getElementById('expenses-tfoot');
     tfoot.innerHTML = `
-      <tr class="tfoot">
-        <td colspan="3" class="text-right">Total</td>
-        <td class="text-right">${formatCurrency(total)}</td>
+      <tr>
+        <td colspan="3" class="txt-right" style="font-size:12px;font-weight:600;color:var(--text-muted)">TOTAL</td>
+        <td class="td-right">${fmt.money(total)}</td>
       </tr>`;
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="4" class="text-center" style="color:var(--danger);padding:20px">${e.message}</td></tr>`;
+    tbody.innerHTML = errorRow(4, e.message);
   }
 }
 
-async function addExpense(e) {
-  e.preventDefault();
-  const form = e.target;
-  const btn = form.querySelector('button[type=submit]');
+async function handleAddExpense(ev) {
+  ev.preventDefault();
+  const btn = document.getElementById('btn-add-expense');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>';
+  btn.innerHTML = '<span class="spin"></span>';
 
-  const description = form.expense_desc.value.trim();
-  const amount = parseFloat(form.expense_amount.value);
-  const paid_by = form.expense_paid_by.value;
-  const date = form.expense_date.value || undefined;
+  const desc   = document.getElementById('exp-desc').value.trim();
+  const amount = parseFloat(document.getElementById('exp-amount').value);
+  const paidBy = document.getElementById('exp-paid-by').value;
+  const date   = document.getElementById('exp-date').value || null;
 
   try {
-    await API.addExpense({ description, amount, paid_by, date: date || null });
-    showToast('Expense added', `${description} — ${formatCurrency(amount)}`, 'success');
-    form.expense_desc.value = '';
-    form.expense_amount.value = '';
-    form.expense_date.value = '';
+    await API.addExpense({ description: desc, amount, paid_by: paidBy, date });
+    toast('Expense added', `${desc} — ${fmt.money(amount)}`, 'success');
+    document.getElementById('exp-desc').value   = '';
+    document.getElementById('exp-amount').value = '';
+    document.getElementById('exp-date').value   = '';
     loadExpenses();
     loadWeekStats();
-  } catch (err) {
-    showToast('Failed to add expense', err.message, 'error');
+  } catch (e) {
+    toast('Add expense failed', e.message, 'error');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = 'Add Expense';
+    btn.innerHTML = '+ Add Expense';
   }
 }
 
-/* ========== Petty Cash ========== */
+function prevExpenseWeek() { expenseWeekOff--; loadExpenses(); }
+function nextExpenseWeek() { expenseWeekOff++; loadExpenses(); }
+
+/* ══════════════════════════════════════════════════
+   PETTY CASH
+══════════════════════════════════════════════════ */
 
 async function loadPettyCash() {
   try {
-    const [balanceData, movementsData] = await Promise.all([
-      API.balance(),
-      API.movements(),
-    ]);
-
-    document.getElementById('petty-balance').textContent = formatCurrency(balanceData.balance);
+    const [bal, mov] = await Promise.all([API.balance(), API.movements()]);
+    document.getElementById('petty-balance').textContent = fmt.money(bal.balance);
 
     const tbody = document.getElementById('movements-tbody');
-    if (movementsData.movements.length === 0) {
-      tbody.innerHTML = `
-        <tr><td colspan="4">
-          <div class="empty-state">
-            <span class="empty-icon">💰</span>
-            <p>No movements yet</p>
-          </div>
-        </td></tr>`;
+    if (!mov.movements.length) {
+      tbody.innerHTML = emptyRow(4, '💰', 'No movements yet');
       return;
     }
 
-    tbody.innerHTML = movementsData.movements.slice().reverse().map(m => {
-      const typeClass = m.type === 'topup' ? 'td-success' : 'td-danger';
-      const typeLabel = m.type === 'topup' ? '↑ Top-up' : '↓ Expense';
+    tbody.innerHTML = [...mov.movements].reverse().map(m => {
+      const isTopup = m.type === 'topup';
       return `
         <tr>
-          <td>${formatDate(m.date)}</td>
-          <td class="${typeClass}">${typeLabel}</td>
-          <td class="td-bold text-right">${formatCurrency(m.amount)}</td>
-          <td class="text-right td-mono">${formatCurrency(m.balance_after)}</td>
+          <td class="td-bold">${fmt.date(m.date)}</td>
+          <td>
+            <span class="tag ${isTopup ? 'tag-success' : 'tag-danger'}">
+              ${isTopup ? '↑ Top-up' : '↓ Expense'}
+            </span>
+          </td>
+          <td class="td-right td-bold ${isTopup ? 'td-success' : 'td-danger'}">${fmt.money(m.amount)}</td>
+          <td class="td-right td-mono">${fmt.money(m.balance_after)}</td>
         </tr>`;
     }).join('');
   } catch (e) {
-    showToast('Petty cash load error', e.message, 'error');
+    toast('Petty cash error', e.message, 'error');
   }
 }
 
-async function addTopup(e) {
-  e.preventDefault();
-  const form = e.target;
-  const btn = form.querySelector('button[type=submit]');
+async function handleTopup(ev) {
+  ev.preventDefault();
+  const btn = document.getElementById('btn-topup');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>';
+  btn.innerHTML = '<span class="spin"></span>';
 
-  const amount = parseFloat(form.topup_amount.value);
-  const description = form.topup_desc.value.trim() || 'Top-up';
+  const amount = parseFloat(document.getElementById('topup-amount').value);
+  const desc   = document.getElementById('topup-desc').value.trim() || 'Top-up';
 
   try {
-    const data = await API.addTopup({ amount, description });
-    showToast('Petty cash topped up', `New balance: ${formatCurrency(data.balance)}`, 'success');
-    form.topup_amount.value = '';
-    form.topup_desc.value = '';
+    const data = await API.topup({ amount, description: desc });
+    toast('Petty cash topped up', `New balance: ${fmt.money(data.balance)}`, 'success');
+    document.getElementById('topup-amount').value = '';
+    document.getElementById('topup-desc').value   = '';
     loadPettyCash();
-  } catch (err) {
-    showToast('Top-up failed', err.message, 'error');
+  } catch (e) {
+    toast('Top-up failed', e.message, 'error');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = 'Top Up';
+    btn.innerHTML = '↑ Top Up';
   }
 }
 
-/* ========== Invoice Generation ========== */
+/* ══════════════════════════════════════════════════
+   INVOICE GENERATOR
+══════════════════════════════════════════════════ */
 
-async function generateInvoice(e) {
-  e.preventDefault();
-  const form = e.target;
-  const btn = document.getElementById('btn-generate-invoice');
+async function handleGenerateInvoice(ev) {
+  ev.preventDefault();
+  const btn  = document.getElementById('btn-generate');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Generating…';
+  btn.innerHTML = '<span class="spin"></span>&thinsp;Generating…';
 
-  const start = form.invoice_start.value;
-  const end = form.invoice_end.value;
-  const sendTelegram = form.send_telegram.checked;
+  const start = document.getElementById('inv-start').value;
+  const end   = document.getElementById('inv-end').value;
+  const send  = document.getElementById('send-telegram').checked;
 
   try {
-    const data = await API.generateInvoice(start, end, sendTelegram);
-    renderInvoiceResult(data);
-    showToast('Invoice generated', `#${String(data.invoice.invoice_number).padStart(3, '0')} — $${data.final_total.toFixed(2)} AUD`, 'success');
-    if (sendTelegram) showToast('Sent via Telegram', 'PDFs delivered to your chat', 'info');
-  } catch (err) {
-    showToast('Invoice generation failed', err.message, 'error');
+    const data = await API.generateInvoice(start, end, send);
+    renderInvoice(data);
+    const num = String(data.invoice.invoice_number).padStart(3, '0');
+    toast(`Invoice #${num} generated`, `Total: ${fmt.money(data.final_total)} AUD`, 'success');
+    if (send) toast('Sent via Telegram', 'PDFs delivered to your chat', 'info');
+  } catch (e) {
+    toast('Generation failed', e.message, 'error');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '⚡ Generate Invoice';
+    btn.innerHTML = '⚡&thinsp; Generate';
   }
 }
 
-function renderInvoiceResult(data) {
-  const inv = data.invoice;
+function renderInvoice(data) {
+  const inv    = data.invoice;
   const invNum = String(inv.invoice_number).padStart(3, '0');
 
-  const linesHtml = data.lines.map(l => `
-    <div class="invoice-line ${l.amount < 0 ? 'credit' : ''}">
+  const lines = data.lines.map(l => `
+    <div class="inv-line ${l.amount < 0 ? 'credit' : ''}">
       <span>${l.description}</span>
-      <span class="amount">${formatCurrency(l.amount)}</span>
+      <span class="inv-amount">${fmt.money(l.amount)}</span>
     </div>`).join('');
 
-  const container = document.getElementById('invoice-result');
-  container.innerHTML = `
-    <div class="invoice-result">
+  const el = document.getElementById('invoice-result');
+  el.innerHTML = `
+    <div class="invoice-result-wrap">
       <div class="invoice-result-header">
-        <span class="invoice-number">Invoice #${invNum}</span>
-        <span style="color:var(--text-secondary);font-size:13px">
-          ${formatDate(inv.date_from)} – ${formatDate(inv.date_to)} &nbsp;·&nbsp; ${inv.total_hours}h @ $${inv.rate}/h
+        <span class="inv-number">Invoice #${invNum}</span>
+        <span class="inv-period">
+          ${fmt.date(inv.date_from)} – ${fmt.date(inv.date_to)}
+          &nbsp;·&nbsp; ${inv.total_hours}h @ $${inv.rate}/h
         </span>
       </div>
-      <div class="invoice-lines">
-        ${linesHtml}
-        <div class="invoice-line total">
-          <span>Total (AUD)</span>
-          <span class="amount">${formatCurrency(data.final_total)}</span>
-        </div>
+      ${lines}
+      <div class="inv-line total">
+        <span>Total Due (AUD)</span>
+        <span class="inv-amount">${fmt.money(data.final_total)}</span>
       </div>
     </div>`;
-  container.classList.remove('hidden');
+  el.classList.remove('hidden');
 }
 
-/* ========== Week Navigation ========== */
+/* ── Table helpers ── */
+function emptyRow(cols, icon, msg) {
+  return `<tr><td colspan="${cols}">
+    <div class="empty">
+      <span class="empty-glyph">${icon}</span>
+      <p>${msg}</p>
+    </div>
+  </td></tr>`;
+}
 
-function setDefaultInvoiceDates() {
-  const { start, end } = getWeekBounds(0);
-  const s = document.getElementById('invoice-start');
-  const e = document.getElementById('invoice-end');
+function errorRow(cols, msg) {
+  return `<tr><td colspan="${cols}" class="txt-center" style="color:var(--danger);padding:20px">${msg}</td></tr>`;
+}
+
+/* ── Set invoice date defaults to current week ── */
+function setInvoiceDefaults() {
+  const { start, end } = fmt.weekRange(0);
+  const s = document.getElementById('inv-start');
+  const e = document.getElementById('inv-end');
   if (s && !s.value) s.value = start;
   if (e && !e.value) e.value = end;
 }
 
-function prevSessionWeek() {
-  sessionWeekOffset--;
-  loadSessions();
-}
-function nextSessionWeek() {
-  sessionWeekOffset++;
-  loadSessions();
-}
-function prevExpenseWeek() {
-  expenseWeekOffset--;
-  loadExpenses();
-}
-function nextExpenseWeek() {
-  expenseWeekOffset++;
-  loadExpenses();
-}
-
-/* ========== Bootstrap ========== */
-
+/* ══════════════════════════════════════════════════
+   BOOTSTRAP
+══════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', () => {
-  // Clock in/out buttons
+  // Clock controls
   document.getElementById('btn-clock-in').addEventListener('click', clockIn);
   document.getElementById('btn-clock-out').addEventListener('click', clockOut);
 
-  // Expense form
-  document.getElementById('expense-form').addEventListener('submit', addExpense);
+  // Forms
+  document.getElementById('expense-form').addEventListener('submit', handleAddExpense);
+  document.getElementById('topup-form').addEventListener('submit', handleTopup);
+  document.getElementById('invoice-form').addEventListener('submit', handleGenerateInvoice);
 
-  // Topup form
-  document.getElementById('topup-form').addEventListener('submit', addTopup);
-
-  // Invoice form
-  document.getElementById('invoice-form').addEventListener('submit', generateInvoice);
-
-  // Set invoice date defaults
-  setDefaultInvoiceDates();
+  // Invoice date defaults
+  setInvoiceDefaults();
 
   // Initial data load
   initTrackerStatus();
