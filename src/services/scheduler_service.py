@@ -27,7 +27,8 @@ async def petty_cash_weekly_report():
 
             # Filter to movements that occurred this week
             week_movements = [
-                m for m in all_movements
+                m
+                for m in all_movements
                 if week_start <= m.date.astimezone(None).date() <= week_end
             ]
 
