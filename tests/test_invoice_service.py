@@ -75,9 +75,12 @@ async def test_invoice_with_petty_cash_covers_all(db):
 
     result = await generate_invoice(db, date(2026, 3, 2), date(2026, 3, 8))
 
-    # Petty cash covers everything, no extra lines
-    assert result["final_total"] == 70.00
-    assert len(result["lines"]) == 1
+    # All expenses appear on the invoice regardless of paid_by.
+    # 2h * 35 = 70 + 20 (petty cash) = 90
+    assert result["final_total"] == 90.00
+    assert len(result["lines"]) == 2
+    assert result["lines"][1]["description"] == "Bolsas (Petty Cash)"
+    assert result["lines"][1]["amount"] == 20.00
 
 
 async def test_invoice_with_partial_petty_cash(db):
@@ -87,11 +90,13 @@ async def test_invoice_with_partial_petty_cash(db):
 
     result = await generate_invoice(db, date(2026, 3, 2), date(2026, 3, 8))
 
-    # 11h * 35 = 385 + 83.82 - 71.00 = 397.82
-    assert result["final_total"] == 397.82
+    # All expenses are line items. No credit balance deduction.
+    # 11h * 35 = 385 + 83.82 + 71.00 = 539.82
+    assert result["final_total"] == 539.82
     assert len(result["lines"]) == 3
-    assert result["lines"][2]["description"] == "Credit Balance"
-    assert result["lines"][2]["amount"] == -71.00
+    assert result["lines"][1]["description"] == "Bunnings"
+    assert result["lines"][2]["description"] == "Bolsas (Petty Cash)"
+    assert result["lines"][2]["amount"] == 71.00
 
 
 async def test_no_sessions_raises_error(db):
