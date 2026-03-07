@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>InvoiceTrack</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container"></div>
+
+<div class="app-wrapper">
+
+  <!-- ========== Header ========== -->
+  <header class="app-header">
+    <a href="/" class="logo">
+      <div class="logo-icon">📋</div>
+      InvoiceTrack
+    </a>
+    <div class="header-meta">
+      <div class="status-badge" id="status-badge">
+        <span class="dot"></span>
+        <span class="status-text" id="status-text">Not working</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========== Main Content ========== -->
+  <main class="main-content">
+
+    <!-- ========== Time Tracker ========== -->
+    <section class="card">
+      <div class="card-header">
+        <h2 class="card-title"><span class="icon">⏱</span> Time Tracker</h2>
+      </div>
+      <div class="card-body">
+        <div class="tracker-hero">
+          <div class="tracker-info">
+            <div class="tracker-label">Elapsed Time</div>
+            <div class="tracker-time" id="tracker-time">00:00:00</div>
+            <div class="tracker-sub text-muted" id="tracker-sub">No active session</div>
+          </div>
+          <div class="tracker-actions">
+            <button class="btn btn-success btn-lg" id="btn-clock-in">▶ Clock In</button>
+            <button class="btn btn-danger btn-lg" id="btn-clock-out" disabled>■ Clock Out</button>
+          </div>
+        </div>
+
+        <!-- Week Stats -->
+        <div class="grid-3 mt-4">
+          <div class="stat-card">
+            <div class="stat-label">Hours This Week</div>
+            <div class="stat-value accent" id="stat-hours">—</div>
+            <div class="stat-note">Rounded to nearest 15 min</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Sessions</div>
+            <div class="stat-value" id="stat-sessions">—</div>
+            <div class="stat-note">Completed work sessions</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Week Expenses</div>
+            <div class="stat-value warning" id="stat-expenses">—</div>
+            <div class="stat-note">All expenses combined</div>
+          </div>
+        </div>
+        <div class="grid-3 mt-3">
+          <div class="stat-card" style="grid-column: 1 / -1">
+            <div class="stat-label">Estimated Week Earnings</div>
+            <div class="stat-value success" id="stat-amount">—</div>
+            <div class="stat-note">Hours × hourly rate (AUD)</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== Work Sessions ========== -->
+    <section class="card">
+      <div class="card-header">
+        <h2 class="card-title"><span class="icon">📅</span> Work Sessions</h2>
+        <div class="week-nav">
+          <button class="btn-icon" onclick="prevSessionWeek()" title="Previous week">&lsaquo;</button>
+          <span class="week-label" id="sessions-week-label"></span>
+          <button class="btn-icon" onclick="nextSessionWeek()" title="Next week">&rsaquo;</button>
+        </div>
+      </div>
+      <div class="table-wrapper" style="border:none;border-radius:0">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Clock In</th>
+              <th>Clock Out</th>
+              <th class="text-right">Raw Hours</th>
+              <th class="text-right">Billed Hours</th>
+            </tr>
+          </thead>
+          <tbody id="sessions-tbody">
+            <tr><td colspan="5" class="text-center text-muted" style="padding:20px">Loading…</td></tr>
+          </tbody>
+          <tfoot id="sessions-tfoot"></tfoot>
+        </table>
+      </div>
+    </section>
+
+    <!-- ========== Expenses + Petty Cash ========== -->
+    <div class="grid-2">
+
+      <!-- Expenses -->
+      <section class="card">
+        <div class="card-header">
+          <h2 class="card-title"><span class="icon">🧾</span> Expenses</h2>
+          <div class="week-nav">
+            <button class="btn-icon" onclick="prevExpenseWeek()" title="Previous week">&lsaquo;</button>
+            <span class="week-label" id="expenses-week-label"></span>
+            <button class="btn-icon" onclick="nextExpenseWeek()" title="Next week">&rsaquo;</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <!-- Add Expense Form -->
+          <form id="expense-form">
+            <div class="form-group">
+              <label class="form-label" for="expense_desc">Description</label>
+              <input
+                id="expense_desc"
+                name="expense_desc"
+                class="form-control"
+                type="text"
+                placeholder="e.g. Cleaning supplies"
+                required
+              />
+            </div>
+            <div class="form-row mt-3">
+              <div class="form-group">
+                <label class="form-label" for="expense_amount">Amount (AUD)</label>
+                <input
+                  id="expense_amount"
+                  name="expense_amount"
+                  class="form-control"
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  placeholder="0.00"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="expense_paid_by">Paid By</label>
+                <select id="expense_paid_by" name="expense_paid_by" class="form-control">
+                  <option value="personal">Personal</option>
+                  <option value="petty_cash">Petty Cash</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group mt-3">
+              <label class="form-label" for="expense_date">Date (optional)</label>
+              <input
+                id="expense_date"
+                name="expense_date"
+                class="form-control"
+                type="date"
+              />
+            </div>
+            <div class="form-actions mt-3">
+              <button type="submit" class="btn btn-primary">Add Expense</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Expense List -->
+        <div class="table-wrapper" style="border:none;border-top:1px solid var(--border);border-radius:0">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Paid By</th>
+                <th class="text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="expenses-tbody">
+              <tr><td colspan="4" class="text-center text-muted" style="padding:20px">Loading…</td></tr>
+            </tbody>
+            <tfoot id="expenses-tfoot"></tfoot>
+          </table>
+        </div>
+      </section>
+
+      <!-- Petty Cash -->
+      <section class="card">
+        <div class="card-header">
+          <h2 class="card-title"><span class="icon">💰</span> Petty Cash</h2>
+        </div>
+        <div class="card-body">
+
+          <!-- Balance -->
+          <div class="balance-display">
+            <div>
+              <div class="balance-label">Current Balance</div>
+              <div class="balance-amount" id="petty-balance">—</div>
+            </div>
+            <span style="font-size:32px;opacity:0.3">💳</span>
+          </div>
+
+          <!-- Top-up Form -->
+          <form id="topup-form">
+            <div class="form-group">
+              <label class="form-label" for="topup_amount">Top-up Amount (AUD)</label>
+              <input
+                id="topup_amount"
+                name="topup_amount"
+                class="form-control"
+                type="number"
+                step="0.01"
+                min="0.01"
+                placeholder="0.00"
+                required
+              />
+            </div>
+            <div class="form-group mt-3">
+              <label class="form-label" for="topup_desc">Description (optional)</label>
+              <input
+                id="topup_desc"
+                name="topup_desc"
+                class="form-control"
+                type="text"
+                placeholder="e.g. Weekly refill"
+              />
+            </div>
+            <div class="form-actions mt-3">
+              <button type="submit" class="btn btn-success">Top Up</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Movements List -->
+        <div class="table-wrapper" style="border:none;border-top:1px solid var(--border);border-radius:0">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th class="text-right">Amount</th>
+                <th class="text-right">Balance</th>
+              </tr>
+            </thead>
+            <tbody id="movements-tbody">
+              <tr><td colspan="4" class="text-center text-muted" style="padding:20px">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ========== Invoice Generator ========== -->
+    <section class="card">
+      <div class="card-header">
+        <h2 class="card-title"><span class="icon">⚡</span> Invoice Generator</h2>
+      </div>
+      <div class="card-body">
+        <p class="text-muted text-sm" style="margin-bottom:16px">
+          Generate a PDF invoice for a date range. All completed sessions and personal expenses will be included.
+          Petty cash expenses are deducted as a credit balance.
+        </p>
+        <form id="invoice-form">
+          <div class="invoice-form">
+            <div class="form-group">
+              <label class="form-label" for="invoice-start">From</label>
+              <input id="invoice-start" name="invoice_start" class="form-control" type="date" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="invoice-end">To</label>
+              <input id="invoice-end" name="invoice_end" class="form-control" type="date" required />
+            </div>
+            <div class="form-group" style="justify-content:flex-end">
+              <button type="submit" class="btn btn-primary btn-lg" id="btn-generate-invoice">
+                ⚡ Generate Invoice
+              </button>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-3">
+            <input type="checkbox" id="send_telegram" name="send_telegram" checked
+              style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer" />
+            <label for="send_telegram" style="font-size:13px;color:var(--text-secondary);cursor:pointer">
+              Send PDF via Telegram after generation
+            </label>
+          </div>
+        </form>
+
+        <!-- Invoice Result (populated dynamically) -->
+        <div id="invoice-result" class="hidden"></div>
+      </div>
+    </section>
+
+  </main>
+
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
