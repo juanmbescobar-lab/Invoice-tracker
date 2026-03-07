@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.api.expenses import router as expenses_router
 from src.api.sessions import router as sessions_router
@@ -32,6 +34,13 @@ app = FastAPI(
 app.include_router(sessions_router)
 app.include_router(expenses_router)
 app.include_router(telegram_router)
+
+app.mount("/static", StaticFiles(directory="src/static"), name="static")
+
+
+@app.get("/", include_in_schema=False)
+async def frontend():
+    return FileResponse("src/static/index.html")
 
 
 @app.get("/health")

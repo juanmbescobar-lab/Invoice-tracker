@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>InvoiceTrack</title>
+  <meta name="description" content="Personal time-tracking and invoice generation dashboard" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="/static/css/style.css" />
+
+  <!-- Favicon inline SVG -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2300d4aa'/><text x='50%' y='58%' dominant-baseline='middle' text-anchor='middle' font-size='18'>📋</text></svg>" />
+</head>
+<body>
+
+<!-- ── Toast stack ── -->
+<div class="toast-stack" id="toast-stack"></div>
+
+<div class="app-wrapper">
+
+  <!-- ══════════════════════════════════════
+       HEADER
+  ══════════════════════════════════════ -->
+  <header class="app-header">
+    <a href="/" class="logo">
+      <div class="logo-mark">📋</div>
+      <span class="logo-text">Invoice<em>Track</em></span>
+    </a>
+
+    <div class="header-right">
+      <div class="status-pill" id="status-pill">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Not working</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ══════════════════════════════════════
+       MAIN CONTENT
+  ══════════════════════════════════════ -->
+  <main class="main">
+
+    <!-- ── 1. Time Tracker ── -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-icon">⏱</div>
+          Time Tracker
+        </div>
+      </div>
+      <div class="card-body">
+
+        <div class="tracker-hero">
+          <!-- Left: clock display -->
+          <div>
+            <div class="tracker-badge" id="tracker-badge">● Idle</div>
+            <div class="tracker-time" id="tracker-time">00:00:00</div>
+            <div class="tracker-meta txt-muted" id="tracker-meta">No active session — clock in to start tracking</div>
+          </div>
+
+          <!-- Right: CTAs -->
+          <div class="tracker-ctas">
+            <button class="btn btn-emerald btn-xl" id="btn-clock-in">
+              ▶&thinsp; Clock In
+            </button>
+            <button class="btn btn-danger btn-xl" id="btn-clock-out" disabled>
+              ■&thinsp; Clock Out
+            </button>
+          </div>
+        </div>
+
+        <!-- Stats row -->
+        <div class="grid-4 mt-4">
+          <div class="stat-card">
+            <div class="stat-label">Billed Hours</div>
+            <div class="stat-value v-accent" id="stat-hours">—</div>
+            <div class="stat-sub">Rounded up ↑ 15 min</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Sessions</div>
+            <div class="stat-value" id="stat-sessions">—</div>
+            <div class="stat-sub">This week</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Week Expenses</div>
+            <div class="stat-value v-warning" id="stat-expenses">—</div>
+            <div class="stat-sub">Personal + petty cash</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Estimated Earnings</div>
+            <div class="stat-value v-success" id="stat-amount">—</div>
+            <div class="stat-sub">Hours × rate (AUD)</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── 2. Work Sessions ── -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-icon">📅</div>
+          Work Sessions
+        </div>
+        <div class="week-nav">
+          <button class="icon-btn" onclick="prevSessionWeek()" title="Previous week">&#8249;</button>
+          <span class="week-nav-label" id="sessions-week-label">—</span>
+          <button class="icon-btn" onclick="nextSessionWeek()" title="Next week">&#8250;</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Clock In</th>
+              <th>Clock Out</th>
+              <th class="txt-right">Raw h</th>
+              <th class="txt-right">Billed h</th>
+            </tr>
+          </thead>
+          <tbody id="sessions-tbody">
+            <tr><td colspan="5"><div class="empty"><span class="empty-glyph">⏳</span><p>Loading sessions…</p></div></td></tr>
+          </tbody>
+          <tfoot id="sessions-tfoot"></tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── 3. Expenses / Petty Cash ── -->
+    <div class="grid-2">
+
+      <!-- Expenses -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="card-icon">🧾</div>
+            Expenses
+          </div>
+          <div class="week-nav">
+            <button class="icon-btn" onclick="prevExpenseWeek()" title="Previous week">&#8249;</button>
+            <span class="week-nav-label" id="expenses-week-label">—</span>
+            <button class="icon-btn" onclick="nextExpenseWeek()" title="Next week">&#8250;</button>
+          </div>
+        </div>
+
+        <!-- Add expense form -->
+        <div class="card-body">
+          <form id="expense-form" autocomplete="off">
+            <div class="form-group">
+              <label class="form-label" for="exp-desc">Description</label>
+              <input id="exp-desc" name="exp-desc" class="form-control"
+                     type="text" placeholder="e.g. Cleaning supplies" required />
+            </div>
+            <div class="form-row mt-3">
+              <div class="form-group">
+                <label class="form-label" for="exp-amount">Amount (AUD)</label>
+                <input id="exp-amount" name="exp-amount" class="form-control"
+                       type="number" step="0.01" min="0.01" placeholder="0.00" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="exp-paid-by">Paid By</label>
+                <select id="exp-paid-by" name="exp-paid-by" class="form-control">
+                  <option value="personal">Personal</option>
+                  <option value="petty_cash">Petty Cash</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group mt-3">
+              <label class="form-label" for="exp-date">Date <span class="txt-muted">(optional)</span></label>
+              <input id="exp-date" name="exp-date" class="form-control" type="date" />
+            </div>
+            <div class="form-actions mt-3">
+              <button type="submit" id="btn-add-expense" class="btn btn-outline-accent">
+                + Add Expense
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <hr class="divider" />
+
+        <!-- Expense list -->
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Via</th>
+                <th class="txt-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="expenses-tbody">
+              <tr><td colspan="4"><div class="empty"><span class="empty-glyph">⏳</span><p>Loading…</p></div></td></tr>
+            </tbody>
+            <tfoot id="expenses-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- Petty Cash -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <div class="card-icon">💰</div>
+            Petty Cash
+          </div>
+        </div>
+        <div class="card-body">
+
+          <!-- Balance -->
+          <div class="balance-block">
+            <div class="balance-main">
+              <div class="balance-label">Current Balance</div>
+              <div class="balance-amount" id="petty-balance">—</div>
+            </div>
+            <div class="balance-icon">💳</div>
+          </div>
+
+          <!-- Top-up form -->
+          <form id="topup-form" autocomplete="off">
+            <div class="form-group">
+              <label class="form-label" for="topup-amount">Top-up Amount (AUD)</label>
+              <input id="topup-amount" name="topup-amount" class="form-control"
+                     type="number" step="0.01" min="0.01" placeholder="0.00" required />
+            </div>
+            <div class="form-group mt-3">
+              <label class="form-label" for="topup-desc">Note <span class="txt-muted">(optional)</span></label>
+              <input id="topup-desc" name="topup-desc" class="form-control"
+                     type="text" placeholder="e.g. Weekly refill" />
+            </div>
+            <div class="form-actions mt-3">
+              <button type="submit" id="btn-topup" class="btn btn-outline-accent">
+                ↑ Top Up
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <hr class="divider" />
+
+        <!-- Movements -->
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th class="txt-right">Amount</th>
+                <th class="txt-right">Balance</th>
+              </tr>
+            </thead>
+            <tbody id="movements-tbody">
+              <tr><td colspan="4"><div class="empty"><span class="empty-glyph">⏳</span><p>Loading…</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /.grid-2 -->
+
+    <!-- ── 4. Invoice Generator ── -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <div class="card-icon">⚡</div>
+          Invoice Generator
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="txt-muted txt-sm" style="margin-bottom:18px;line-height:1.7">
+          Generates a PDF invoice for the selected period. Completed sessions are billed at the
+          configured hourly rate (rounded up to 15 min). Personal expenses appear as individual
+          line items; petty cash expenses are deducted as a credit balance.
+        </p>
+
+        <form id="invoice-form" autocomplete="off">
+          <div class="invoice-form-row">
+            <div class="form-group">
+              <label class="form-label" for="inv-start">Period Start</label>
+              <input id="inv-start" name="inv-start" class="form-control" type="date" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="inv-end">Period End</label>
+              <input id="inv-end" name="inv-end" class="form-control" type="date" required />
+            </div>
+            <div class="form-group" style="align-self:flex-end">
+              <button type="submit" id="btn-generate" class="btn btn-emerald btn-xl">
+                ⚡&thinsp; Generate
+              </button>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 mt-3">
+            <input type="checkbox" id="send-telegram" name="send-telegram" checked
+                   style="width:15px;height:15px;accent-color:var(--accent);cursor:pointer" />
+            <label for="send-telegram" style="font-size:13px;color:var(--text-secondary);cursor:pointer">
+              Send PDF via Telegram after generation
+            </label>
+          </div>
+        </form>
+
+        <!-- Invoice result rendered here -->
+        <div id="invoice-result" class="hidden"></div>
+
+      </div>
+    </div>
+
+  </main>
+</div><!-- /.app-wrapper -->
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
