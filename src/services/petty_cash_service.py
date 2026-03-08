@@ -1,3 +1,5 @@
+from datetime import date, datetime
+
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,3 +67,41 @@ async def get_movements(db: AsyncSession) -> list[PettyCash]:
     query = select(PettyCash).order_by(PettyCash.id)
     result = await db.execute(query)
     return list(result.scalars().all())
+
+
+async def get_weekly_summary(db: AsyncSession, start: date, end: date) -> dict:
+    """Return petty cash totals and movements for a date range.
+
+    Returns a dict with topups_total, expenses_total, net_change,
+    current_balance, and a list of individual movements within the range.
+    """
+    all_movements = await get_movements(db)
+
+    def _to_date(dt: datetime) -> date:
+        if dt.tzinfo is not None:
+            return dt.astimezone(None).date()
+        return dt.date()
+
+    week_movements = [m for m in all_movements if start <= _to_date(m.date) <= end]
+
+    topups_total = round(
+        sum(m.amount for m in week_movements if m.movement_type == "topup"), 2
+    )
+    expenses_total = round(
+        sum(m.amount for m in week_movements if m.movement_type == "expense"), 2
+    )
+
+    return {
+        "topups_total": topups_total,
+        "expenses_total": expenses_total,
+        "net_change": round(topups_total - expenses_total, 2),
+        "current_balance": await get_current_balance(db),
+        "movements": [
+            {
+                "type": m.movement_type,
+                "amount": m.amount,
+                "description": m.description,
+            }
+            for m in week_movements
+        ],
+    }
