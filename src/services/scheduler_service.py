@@ -6,7 +6,11 @@ from src.core.config import settings
 from src.core.database import async_session
 from src.services.invoice_service import generate_invoice
 from src.services.pdf_service import generate_hours_pdf, generate_invoice_pdf
-from src.services.petty_cash_service import get_current_balance, get_movements
+from src.services.petty_cash_service import (
+    get_current_balance,
+    get_movements,
+    get_weekly_summary,
+)
 from src.services.telegram_service import send_message, send_pdf
 
 
@@ -131,6 +135,27 @@ async def generate_weekly_invoice():
             await send_pdf(
                 hours_pdf, caption=f"📊 Hours detail — Invoice #{inv_number:03d}"
             )
+
+            # Send petty cash weekly summary
+            summary = await get_weekly_summary(db, start, end)
+            lines = [f"📦 Petty Cash Report — Week {start} to {end}", ""]
+            if summary["movements"]:
+                lines.append(f"Topups: ${summary['topups_total']:.2f}")
+                lines.append(f"Expenses: ${summary['expenses_total']:.2f}")
+                net = summary["net_change"]
+                net_sign = "+" if net >= 0 else "-"
+                lines.append(f"Net change: {net_sign}${abs(net):.2f}")
+                lines.append(f"Current balance: ${summary['current_balance']:.2f}")
+                lines.append("")
+                lines.append("Movements:")
+                for m in summary["movements"]:
+                    sign = "+" if m["type"] == "topup" else "-"
+                    desc = f" — {m['description']}" if m["description"] else ""
+                    lines.append(f"{sign} ${m['amount']:.2f}{desc}")
+            else:
+                lines.append("No petty cash movements this week.")
+                lines.append(f"Current balance: ${summary['current_balance']:.2f}")
+            await send_message("\n".join(lines))
 
         except ValueError as e:
             await send_message(
