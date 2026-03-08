@@ -69,6 +69,23 @@ async def test_movements_history(client):
     assert data["movements"][1]["balance_after"] == 75.0
 
 
+async def test_balance_goes_to_zero_on_partial_spend(client):
+    """When expense > petty cash balance, balance reaches 0 (not negative)."""
+    await client.post("/api/petty-cash/topup", json={"amount": 50})
+    await client.post(
+        "/api/expenses",
+        json={"description": "Bunnings", "amount": 100.00, "paid_by": "petty_cash"},
+    )
+    balance = await client.get("/api/petty-cash/balance")
+    assert balance.json()["balance"] == 0.0
+
+    # Only $50 was deducted, so one expense movement of $50
+    movements = await client.get("/api/petty-cash/movements")
+    data = movements.json()
+    assert data["count"] == 2  # 1 topup + 1 expense movement
+    assert data["movements"][1]["amount"] == 50.0
+
+
 async def test_empty_movements(client):
     response = await client.get("/api/petty-cash/movements")
     assert response.status_code == 200

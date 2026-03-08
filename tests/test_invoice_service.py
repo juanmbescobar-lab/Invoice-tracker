@@ -1,10 +1,11 @@
-from datetime import date, time
+from datetime import date, datetime, time
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database import Base, async_session, engine
 from src.models.expense import Expense
+from src.models.petty_cash import PettyCash
 from src.models.work_session import WorkSession
 from src.services.invoice_service import generate_invoice, get_next_invoice_number
 
@@ -40,6 +41,19 @@ async def add_expense(
     await db.commit()
 
 
+async def add_petty_cash_movement(db: AsyncSession, amount: float, d: date):
+    """Insert a petty cash expense movement directly for testing Credit Balance."""
+    pc = PettyCash(
+        date=datetime(d.year, d.month, d.day, 12, 0),
+        movement_type="expense",
+        amount=amount,
+        balance_after=0.0,
+        description="",
+    )
+    db.add(pc)
+    await db.commit()
+
+
 async def test_next_invoice_number_starts_from_config(db):
     number = await get_next_invoice_number(db)
     assert number == 1
@@ -70,51 +84,71 @@ async def test_invoice_with_personal_expenses(db):
 
 
 async def test_invoice_with_petty_cash_covers_all(db):
+    """Petty cash covers full expense: expense shown at full amount, credit offsets it."""
+    await add_session(db, date(2026, 3, 2), time(9, 0), time(11, 0), 2.0)
+    await add_expense(db, "Bolsas", 20.00, "petty_cash", date(2026, 3, 3))
+    await add_petty_cash_movement(db, 20.00, date(2026, 3, 3))
+
+    result = await generate_invoice(db, date(2026, 3, 2), date(2026, 3, 8))
+
+    # 2h * 35 = 70 + 20 (expense) - 20 (credit) = 70
+    assert result["final_total"] == 70.00
+    assert len(result["lines"]) == 3
+    assert result["lines"][1]["description"] == "Bolsas"
+    assert result["lines"][1]["amount"] == 20.00
+    assert result["lines"][2]["description"] == "Credit Balance"
+    assert result["lines"][2]["amount"] == -20.00
+
+
+async def test_invoice_with_partial_petty_cash(db):
+    """Partial petty cash deduction: credit = actual deduction, not full expense."""
+    await add_session(db, date(2026, 3, 2), time(9, 0), time(20, 0), 11.0)
+    await add_expense(db, "Bunnings", 83.82, "personal", date(2026, 3, 3))
+    await add_expense(db, "Bolsas", 71.00, "petty_cash", date(2026, 3, 3))
+    # Only $50 was available in petty cash, so $50 was deducted
+    await add_petty_cash_movement(db, 50.00, date(2026, 3, 3))
+
+    result = await generate_invoice(db, date(2026, 3, 2), date(2026, 3, 8))
+
+    # 11h * 35 = 385 + 83.82 + 71 - 50 (credit) = 489.82
+    assert result["final_total"] == 489.82
+    assert len(result["lines"]) == 4
+    assert result["lines"][1]["description"] == "Bunnings"
+    assert result["lines"][2]["description"] == "Bolsas"
+    assert result["lines"][2]["amount"] == 71.00
+    assert result["lines"][3]["description"] == "Credit Balance"
+    assert result["lines"][3]["amount"] == -50.00
+
+
+async def test_invoice_with_mixed_expenses_and_credit(db):
+    """Mix of personal and petty_cash expenses: credit offsets only petty cash deductions."""
+    await add_session(db, date(2026, 3, 2), time(9, 0), time(11, 0), 2.0)
+    await add_expense(db, "Bunnings", 50.00, "petty_cash", date(2026, 3, 3))
+    await add_expense(db, "Laundromat", 20.00, "personal", date(2026, 3, 3))
+    await add_petty_cash_movement(db, 50.00, date(2026, 3, 3))
+
+    result = await generate_invoice(db, date(2026, 3, 2), date(2026, 3, 8))
+
+    # 2h * 35 = 70 + 50 + 20 - 50 (credit) = 90
+    assert result["final_total"] == 90.00
+    assert len(result["lines"]) == 4
+    assert result["lines"][1]["description"] == "Bunnings"
+    assert result["lines"][2]["description"] == "Laundromat"
+    assert result["lines"][3]["description"] == "Credit Balance"
+    assert result["lines"][3]["amount"] == -50.00
+
+
+async def test_invoice_no_credit_balance_without_petty_cash_movements(db):
+    """A petty_cash expense with no matching movement does not create a Credit Balance line."""
     await add_session(db, date(2026, 3, 2), time(9, 0), time(11, 0), 2.0)
     await add_expense(db, "Bolsas", 20.00, "petty_cash", date(2026, 3, 3))
 
     result = await generate_invoice(db, date(2026, 3, 2), date(2026, 3, 8))
 
-    # All expenses appear on the invoice regardless of paid_by.
-    # 2h * 35 = 70 + 20 (petty cash) = 90
+    # No PettyCash movements → no credit balance, expense appears as-is
     assert result["final_total"] == 90.00
     assert len(result["lines"]) == 2
-    assert result["lines"][1]["description"] == "Bolsas (Petty Cash)"
-    assert result["lines"][1]["amount"] == 20.00
-
-
-async def test_invoice_with_partial_petty_cash(db):
-    await add_session(db, date(2026, 3, 2), time(9, 0), time(20, 0), 11.0)
-    await add_expense(db, "Bunnings", 83.82, "personal", date(2026, 3, 3))
-    await add_expense(db, "Bolsas", 71.00, "petty_cash", date(2026, 3, 3))
-
-    result = await generate_invoice(db, date(2026, 3, 2), date(2026, 3, 8))
-
-    # All expenses are line items. No credit balance deduction.
-    # 11h * 35 = 385 + 83.82 + 71.00 = 539.82
-    assert result["final_total"] == 539.82
-    assert len(result["lines"]) == 3
-    assert result["lines"][1]["description"] == "Bunnings"
-    assert result["lines"][2]["description"] == "Bolsas (Petty Cash)"
-    assert result["lines"][2]["amount"] == 71.00
-
-
-async def test_invoice_with_split_petty_cash_expense(db):
-    """Split expense (petty_cash + personal) appears as two separate invoice lines."""
-    await add_session(db, date(2026, 3, 2), time(9, 0), time(11, 0), 2.0)
-    # Simulate a $100 expense where $50 came from petty cash and $50 was personal
-    await add_expense(db, "Bunnings", 50.00, "petty_cash", date(2026, 3, 3))
-    await add_expense(db, "Bunnings", 50.00, "personal", date(2026, 3, 3))
-
-    result = await generate_invoice(db, date(2026, 3, 2), date(2026, 3, 8))
-
-    # 2h * 35 = 70 + 50 (petty_cash) + 50 (personal) = 170
-    assert result["final_total"] == 170.00
-    assert len(result["lines"]) == 3
-    assert result["lines"][1]["description"] == "Bunnings (Petty Cash)"
-    assert result["lines"][1]["amount"] == 50.00
-    assert result["lines"][2]["description"] == "Bunnings"
-    assert result["lines"][2]["amount"] == 50.00
+    assert result["lines"][1]["description"] == "Bolsas"
 
 
 async def test_no_sessions_raises_error(db):
