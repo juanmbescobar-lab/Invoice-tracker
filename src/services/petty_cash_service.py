@@ -32,21 +32,18 @@ async def topup(db: AsyncSession, amount: float, description: str = "") -> Petty
     return movement
 
 
-async def spend(
-    db: AsyncSession, amount: float, description: str
-) -> tuple[float, float]:
-    """Spend from petty cash. Returns (petty_cash_spent, remainder).
+async def spend(db: AsyncSession, amount: float, description: str) -> float:
+    """Spend from petty cash. Returns the amount actually deducted.
 
-    Only spends what is available (up to the current balance). The remainder
-    is the portion not covered by petty cash and should be treated as a
-    personal expense. Balance never goes below zero.
+    Only spends what is available (up to the current balance). If the balance
+    is zero no movement is created and 0.0 is returned. Balance never goes
+    below zero.
     """
     if amount <= 0:
         raise ValueError("Spend amount must be positive.")
 
     current = await get_current_balance(db)
     petty_cash_spent = round(min(amount, max(current, 0.0)), 2)
-    remainder = round(amount - petty_cash_spent, 2)
 
     if petty_cash_spent > 0:
         movement = PettyCash(
@@ -59,7 +56,7 @@ async def spend(
         await db.commit()
         await db.refresh(movement)
 
-    return petty_cash_spent, remainder
+    return petty_cash_spent
 
 
 async def get_movements(db: AsyncSession) -> list[PettyCash]:
