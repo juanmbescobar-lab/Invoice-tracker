@@ -13,26 +13,60 @@ async def add_expense(
     amount: float,
     paid_by: str,
     expense_date: date | None = None,
-) -> Expense:
-    """Register an expense. If paid by petty cash, also deducts from balance."""
+) -> list[Expense]:
+    """Register an expense. Returns a list of created expense records.
+
+    If paid_by='petty_cash' and the balance is insufficient, the expense is
+    split: one record for the petty_cash portion and one for the remainder
+    (personal). If balance is zero, a single personal expense is created.
+    """
     if amount <= 0:
         raise ValueError("Expense amount must be positive.")
     if paid_by not in ("personal", "petty_cash"):
         raise ValueError("paid_by must be 'personal' or 'petty_cash'.")
 
-    if paid_by == "petty_cash":
-        await spend(db, amount, description)
+    today = expense_date or date.today()
+    expenses: list[Expense] = []
 
-    expense = Expense(
-        date=expense_date or date.today(),
-        description=description,
-        amount=amount,
-        paid_by=paid_by,
-    )
-    db.add(expense)
+    if paid_by == "petty_cash":
+        petty_cash_spent, remainder = await spend(db, amount, description)
+
+        if petty_cash_spent > 0:
+            expenses.append(
+                Expense(
+                    date=today,
+                    description=description,
+                    amount=petty_cash_spent,
+                    paid_by="petty_cash",
+                )
+            )
+
+        if remainder > 0:
+            expenses.append(
+                Expense(
+                    date=today,
+                    description=description,
+                    amount=remainder,
+                    paid_by="personal",
+                )
+            )
+    else:
+        expenses.append(
+            Expense(
+                date=today,
+                description=description,
+                amount=amount,
+                paid_by=paid_by,
+            )
+        )
+
+    for exp in expenses:
+        db.add(exp)
     await db.commit()
-    await db.refresh(expense)
-    return expense
+    for exp in expenses:
+        await db.refresh(exp)
+
+    return expenses
 
 
 async def get_expenses_by_date_range(

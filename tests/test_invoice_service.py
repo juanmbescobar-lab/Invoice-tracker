@@ -99,6 +99,24 @@ async def test_invoice_with_partial_petty_cash(db):
     assert result["lines"][2]["amount"] == 71.00
 
 
+async def test_invoice_with_split_petty_cash_expense(db):
+    """Split expense (petty_cash + personal) appears as two separate invoice lines."""
+    await add_session(db, date(2026, 3, 2), time(9, 0), time(11, 0), 2.0)
+    # Simulate a $100 expense where $50 came from petty cash and $50 was personal
+    await add_expense(db, "Bunnings", 50.00, "petty_cash", date(2026, 3, 3))
+    await add_expense(db, "Bunnings", 50.00, "personal", date(2026, 3, 3))
+
+    result = await generate_invoice(db, date(2026, 3, 2), date(2026, 3, 8))
+
+    # 2h * 35 = 70 + 50 (petty_cash) + 50 (personal) = 170
+    assert result["final_total"] == 170.00
+    assert len(result["lines"]) == 3
+    assert result["lines"][1]["description"] == "Bunnings (Petty Cash)"
+    assert result["lines"][1]["amount"] == 50.00
+    assert result["lines"][2]["description"] == "Bunnings"
+    assert result["lines"][2]["amount"] == 50.00
+
+
 async def test_no_sessions_raises_error(db):
     with pytest.raises(ValueError, match="No completed sessions"):
         await generate_invoice(db, date(2026, 3, 2), date(2026, 3, 8))

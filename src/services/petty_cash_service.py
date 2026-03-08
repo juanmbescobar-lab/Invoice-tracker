@@ -30,22 +30,34 @@ async def topup(db: AsyncSession, amount: float, description: str = "") -> Petty
     return movement
 
 
-async def spend(db: AsyncSession, amount: float, description: str) -> PettyCash:
-    """Spend from petty cash. Balance may go negative if funds are insufficient."""
+async def spend(
+    db: AsyncSession, amount: float, description: str
+) -> tuple[float, float]:
+    """Spend from petty cash. Returns (petty_cash_spent, remainder).
+
+    Only spends what is available (up to the current balance). The remainder
+    is the portion not covered by petty cash and should be treated as a
+    personal expense. Balance never goes below zero.
+    """
     if amount <= 0:
         raise ValueError("Spend amount must be positive.")
 
     current = await get_current_balance(db)
-    movement = PettyCash(
-        movement_type="expense",
-        amount=amount,
-        balance_after=round(current - amount, 2),
-        description=description,
-    )
-    db.add(movement)
-    await db.commit()
-    await db.refresh(movement)
-    return movement
+    petty_cash_spent = round(min(amount, max(current, 0.0)), 2)
+    remainder = round(amount - petty_cash_spent, 2)
+
+    if petty_cash_spent > 0:
+        movement = PettyCash(
+            movement_type="expense",
+            amount=petty_cash_spent,
+            balance_after=round(current - petty_cash_spent, 2),
+            description=description,
+        )
+        db.add(movement)
+        await db.commit()
+        await db.refresh(movement)
+
+    return petty_cash_spent, remainder
 
 
 async def get_movements(db: AsyncSession) -> list[PettyCash]:
