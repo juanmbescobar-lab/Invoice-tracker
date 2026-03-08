@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import settings
 from src.models.expense import Expense
 from src.models.invoice import Invoice
+from src.models.petty_cash import PettyCash
 from src.models.work_session import WorkSession
+
+
+def _to_date(dt: datetime) -> date:
+    """Convert a datetime (naive or timezone-aware) to a local date."""
+    if dt.tzinfo is not None:
+        return dt.astimezone(None).date()
+    return dt.date()
 
 
 async def get_next_invoice_number(db: AsyncSession) -> int:
@@ -50,34 +58,29 @@ async def generate_invoice(db: AsyncSession, start: date, end: date) -> dict:
     expenses_result = await db.execute(expenses_query)
     expenses = list(expenses_result.scalars().all())
 
-    # All expenses appear on the invoice regardless of paid_by.
-    # Petty cash expenses were already deducted from the cash balance when
-    # they were registered via add_expense → spend().
-    total_expenses = sum(e.amount for e in expenses)
+    total_expenses = round(sum(e.amount for e in expenses), 2)
 
-    # Build invoice lines
-    lines = []
-    lines.append(
-        {
-            "description": settings.service_description,
-            "amount": hours_amount,
-        }
+    # Calculate credit balance = sum of petty cash deductions in this period.
+    # These are PettyCash movements of type "expense" whose date falls in range.
+    pc_query = select(PettyCash).where(PettyCash.movement_type == "expense")
+    pc_result = await db.execute(pc_query)
+    pc_expense_movements = list(pc_result.scalars().all())
+    credit_balance = round(
+        sum(m.amount for m in pc_expense_movements if start <= _to_date(m.date) <= end),
+        2,
     )
 
-    # Every expense becomes its own line item
+    # Build invoice lines — every expense is a positive line item
+    lines = [{"description": settings.service_description, "amount": hours_amount}]
     for exp in expenses:
-        label = exp.description
-        if exp.paid_by == "petty_cash":
-            label = f"{exp.description} (Petty Cash)"
-        lines.append(
-            {
-                "description": label,
-                "amount": exp.amount,
-            }
-        )
+        lines.append({"description": exp.description, "amount": exp.amount})
 
-    # Final total: hours + all expenses
-    final_total = round(hours_amount + total_expenses, 2)
+    # Credit Balance offsets what was already provided via petty cash
+    if credit_balance > 0:
+        lines.append({"description": "Credit Balance", "amount": -credit_balance})
+
+    # Final total: hours + all expenses - credit balance
+    final_total = round(hours_amount + total_expenses - credit_balance, 2)
 
     # Get next invoice number
     invoice_number = await get_next_invoice_number(db)
@@ -89,7 +92,7 @@ async def generate_invoice(db: AsyncSession, start: date, end: date) -> dict:
         date_to=end,
         total_hours=total_hours,
         total_amount=hours_amount,
-        expenses_total=round(total_expenses, 2),
+        expenses_total=total_expenses,
         final_total=final_total,
         status="draft",
     )

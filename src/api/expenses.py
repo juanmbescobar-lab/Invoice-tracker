@@ -29,7 +29,7 @@ class TopupRequest(BaseModel):
 @router.post("/expenses")
 async def api_add_expense(req: ExpenseRequest, db: AsyncSession = SessionDep):
     try:
-        expenses = await add_expense(
+        expense = await add_expense(
             db,
             description=req.description,
             amount=req.amount,
@@ -38,16 +38,13 @@ async def api_add_expense(req: ExpenseRequest, db: AsyncSession = SessionDep):
         )
         return {
             "message": "Expense registered",
-            "expenses": [
-                {
-                    "id": e.id,
-                    "date": str(e.date),
-                    "description": e.description,
-                    "amount": e.amount,
-                    "paid_by": e.paid_by,
-                }
-                for e in expenses
-            ],
+            "expense": {
+                "id": expense.id,
+                "date": str(expense.date),
+                "description": expense.description,
+                "amount": expense.amount,
+                "paid_by": expense.paid_by,
+            },
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

@@ -28,14 +28,13 @@ async def test_add_personal_expense(client):
     )
     assert response.status_code == 200
     data = response.json()
-    assert len(data["expenses"]) == 1
-    assert data["expenses"][0]["description"] == "Detergente"
-    assert data["expenses"][0]["amount"] == 15.50
-    assert data["expenses"][0]["paid_by"] == "personal"
+    assert data["expense"]["description"] == "Detergente"
+    assert data["expense"]["amount"] == 15.50
+    assert data["expense"]["paid_by"] == "personal"
 
 
-async def test_add_petty_cash_expense_full_coverage(client):
-    """When balance >= expense amount, a single petty_cash expense is created."""
+async def test_add_petty_cash_expense_deducts_balance(client):
+    """Petty cash expense registers at full amount and reduces the balance."""
     await client.post(
         "/api/petty-cash/topup", json={"amount": 100, "description": "Recarga"}
     )
@@ -45,13 +44,15 @@ async def test_add_petty_cash_expense_full_coverage(client):
     )
     assert response.status_code == 200
     data = response.json()
-    assert len(data["expenses"]) == 1
-    assert data["expenses"][0]["paid_by"] == "petty_cash"
-    assert data["expenses"][0]["amount"] == 20.00
+    assert data["expense"]["paid_by"] == "petty_cash"
+    assert data["expense"]["amount"] == 20.00
+
+    balance = await client.get("/api/petty-cash/balance")
+    assert balance.json()["balance"] == 80.00
 
 
 async def test_petty_cash_expense_partial_coverage(client):
-    """When balance < expense amount, the expense is split into petty_cash + personal."""
+    """When expense > balance, single expense at full amount is created; balance → 0."""
     await client.post("/api/petty-cash/topup", json={"amount": 50})
     response = await client.post(
         "/api/expenses",
@@ -59,27 +60,23 @@ async def test_petty_cash_expense_partial_coverage(client):
     )
     assert response.status_code == 200
     data = response.json()
-    assert len(data["expenses"]) == 2
-    assert data["expenses"][0]["paid_by"] == "petty_cash"
-    assert data["expenses"][0]["amount"] == 50.00
-    assert data["expenses"][1]["paid_by"] == "personal"
-    assert data["expenses"][1]["amount"] == 50.00
+    assert data["expense"]["paid_by"] == "petty_cash"
+    assert data["expense"]["amount"] == 100.00
 
     balance = await client.get("/api/petty-cash/balance")
     assert balance.json()["balance"] == 0.0
 
 
-async def test_petty_cash_expense_zero_balance_becomes_personal(client):
-    """When petty cash balance is 0, expense becomes fully personal."""
+async def test_petty_cash_expense_zero_balance(client):
+    """When balance is 0, expense still registers with paid_by=petty_cash."""
     response = await client.post(
         "/api/expenses",
         json={"description": "Bolsas", "amount": 20.00, "paid_by": "petty_cash"},
     )
     assert response.status_code == 200
     data = response.json()
-    assert len(data["expenses"]) == 1
-    assert data["expenses"][0]["paid_by"] == "personal"
-    assert data["expenses"][0]["amount"] == 20.00
+    assert data["expense"]["paid_by"] == "petty_cash"
+    assert data["expense"]["amount"] == 20.00
 
     balance = await client.get("/api/petty-cash/balance")
     assert balance.json()["balance"] == 0.0
