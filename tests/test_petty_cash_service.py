@@ -75,6 +75,23 @@ async def test_weekly_summary_excludes_out_of_range_movements(db: AsyncSession):
     assert summary["current_balance"] == 60.00
 
 
+async def test_weekly_summary_monday_to_sunday_range(db: AsyncSession):
+    """get_weekly_summary uses an inclusive Monday–Sunday range."""
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())  # Monday
+    week_end = week_start + timedelta(days=6)  # Sunday
+
+    await topup(db, 100.00, "Recarga semana")
+    await spend(db, 30.00, "Bunnings")
+
+    summary = await get_weekly_summary(db, week_start, week_end)
+
+    assert summary["topups_total"] == 100.00
+    assert summary["expenses_total"] == 30.00
+    assert summary["net_change"] == 70.00
+    assert len(summary["movements"]) == 2
+
+
 async def test_weekly_summary_movements_structure(db: AsyncSession):
     await topup(db, 50.00, "Recarga")
     await spend(db, 20.00, "Bolsas")
