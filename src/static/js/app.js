@@ -356,6 +356,7 @@ async function handleAddExpense(ev) {
     document.getElementById('exp-date').value   = '';
     loadExpenses();
     loadWeekStats();
+    loadPettyCash();
   } catch (e) {
     toast('Add expense failed', e.message, 'error');
   } finally {
