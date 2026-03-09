@@ -1,4 +1,5 @@
-from datetime import date, timedelta
+from datetime import date as date_
+from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,7 +19,7 @@ class ExpenseRequest(BaseModel):
     description: str
     amount: float
     paid_by: str = "personal"
-    date: Optional[date] = None
+    date: Optional[date_] = None
 
 
 class TopupRequest(BaseModel):
@@ -52,12 +53,12 @@ async def api_add_expense(req: ExpenseRequest, db: AsyncSession = SessionDep):
 
 @router.get("/expenses")
 async def api_get_expenses(
-    start: Optional[date] = None,
-    end: Optional[date] = None,
+    start: Optional[date_] = None,
+    end: Optional[date_] = None,
     db: AsyncSession = SessionDep,
 ):
     if not start:
-        today = date.today()
+        today = date_.today()
         start = today - timedelta(days=today.weekday())
     if not end:
         end = start + timedelta(days=6)

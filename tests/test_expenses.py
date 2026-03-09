@@ -104,3 +104,28 @@ async def test_get_expenses_after_adding(client):
     response = await client.get("/api/expenses")
     assert response.status_code == 200
     assert response.json()["count"] == 1
+
+
+async def test_add_expense_with_specific_date(client):
+    """Expense submitted with a specific date is stored with that date."""
+    response = await client.post(
+        "/api/expenses",
+        json={"description": "Bunnings", "amount": 83.82, "date": "2026-03-10"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["expense"]["description"] == "Bunnings"
+    assert data["expense"]["date"] == "2026-03-10"
+
+
+async def test_add_expense_without_date_uses_today(client):
+    """Expense submitted without a date uses today's date."""
+    from datetime import date
+
+    response = await client.post(
+        "/api/expenses",
+        json={"description": "Detergente", "amount": 5.00},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["expense"]["date"] == str(date.today())

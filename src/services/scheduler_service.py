@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -12,6 +12,13 @@ from src.services.petty_cash_service import (
     get_weekly_summary,
 )
 from src.services.telegram_service import send_message, send_pdf
+
+
+def _to_date(dt: datetime) -> date:
+    """Convert a datetime (naive or timezone-aware) to a local date."""
+    if dt.tzinfo is not None:
+        return dt.astimezone(None).date()
+    return dt.date()
 
 
 async def petty_cash_weekly_report():
@@ -31,9 +38,7 @@ async def petty_cash_weekly_report():
 
             # Filter to movements that occurred this week
             week_movements = [
-                m
-                for m in all_movements
-                if week_start <= m.date.astimezone(None).date() <= week_end
+                m for m in all_movements if week_start <= _to_date(m.date) <= week_end
             ]
 
             lines = [

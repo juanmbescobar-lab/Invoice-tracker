@@ -151,6 +151,25 @@ async def test_invoice_no_credit_balance_without_petty_cash_movements(db):
     assert result["lines"][1]["description"] == "Bolsas"
 
 
+async def test_expense_on_week_boundary_included(db):
+    """Expenses on Monday and Sunday of the invoice week are included."""
+    await add_session(db, date(2026, 3, 2), time(9, 0), time(11, 0), 2.0)
+    # Monday (start of week)
+    await add_expense(db, "Monday Buy", 10.00, "personal", date(2026, 3, 2))
+    # Sunday (end of week)
+    await add_expense(db, "Sunday Buy", 20.00, "personal", date(2026, 3, 8))
+    # Day before Monday — must NOT be included
+    await add_expense(db, "Previous Week", 99.00, "personal", date(2026, 3, 1))
+
+    result = await generate_invoice(db, date(2026, 3, 2), date(2026, 3, 8))
+
+    descriptions = [line["description"] for line in result["lines"]]
+    assert "Monday Buy" in descriptions
+    assert "Sunday Buy" in descriptions
+    assert "Previous Week" not in descriptions
+    assert result["final_total"] == round(2.0 * 35 + 10.00 + 20.00, 2)
+
+
 async def test_no_sessions_raises_error(db):
     with pytest.raises(ValueError, match="No completed sessions"):
         await generate_invoice(db, date(2026, 3, 2), date(2026, 3, 8))
