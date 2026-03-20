@@ -33,3 +33,4 @@ data/*.db-journal
 # OS
 .DS_Store
 Thumbs.db
+data/invoices/
