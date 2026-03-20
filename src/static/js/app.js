@@ -272,6 +272,10 @@ async function loadSessions() {
           </td>
           <td class="td-mono td-right">${s.raw_hours ? parseFloat(s.raw_hours).toFixed(2) : '—'}</td>
           <td class="td-accent td-bold td-right">${adjH != null ? adjH.toFixed(2) : '—'}</td>
+          <td class="td-right" style="width:60px">
+            <button class="btn-action" title="Edit" onclick='openSessionModal(${JSON.stringify(s)})'>✏️</button>
+            <button class="btn-action danger" title="Delete" onclick="confirmDeleteSession(${s.id}, '${s.date}')">🗑️</button>
+          </td>
         </tr>`;
     }).join('');
 
@@ -528,3 +532,90 @@ document.addEventListener('DOMContentLoaded', () => {
   loadExpenses();
   loadPettyCash();
 });
+
+
+/* ══════════════════════════════════════════════════
+   SESSION MODAL
+══════════════════════════════════════════════════ */
+
+let _editingSessionId = null;
+
+function openSessionModal(session = null) {
+  _editingSessionId = session ? session.id : null;
+
+  const title = document.getElementById('session-modal-title');
+  const saveBtn = document.getElementById('modal-save-btn');
+  title.textContent = session ? 'Edit Session' : 'Add Session';
+  saveBtn.textContent = session ? 'Save Changes' : 'Save Session';
+
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('modal-date').value      = session ? session.date : today;
+  document.getElementById('modal-clock-in').value  = session ? session.clock_in.slice(0, 5) : '';
+  document.getElementById('modal-clock-out').value = session && session.clock_out ? session.clock_out.slice(0, 5) : '';
+
+  document.getElementById('session-modal-overlay').classList.remove('hidden');
+}
+
+function closeSessionModal(e) {
+  if (e && e.target !== document.getElementById('session-modal-overlay')) return;
+  document.getElementById('session-modal-overlay').classList.add('hidden');
+  _editingSessionId = null;
+}
+
+async function saveSession() {
+  const date     = document.getElementById('modal-date').value;
+  const clockIn  = document.getElementById('modal-clock-in').value;
+  const clockOut = document.getElementById('modal-clock-out').value || null;
+
+  if (!date || !clockIn) {
+    toast('Missing fields', 'Date and Clock In are required', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('modal-save-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>';
+
+  try {
+    const body = { date, clock_in: clockIn, clock_out: clockOut };
+
+    if (_editingSessionId) {
+      await fetch(`/api/sessions/${_editingSessionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then(r => r.ok ? r.json() : r.json().then(e => { throw new Error(e.detail); }));
+      toast('Session updated', `${date} · ${clockIn}${clockOut ? ' – ' + clockOut : ''}`, 'success');
+    } else {
+      await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then(r => r.ok ? r.json() : r.json().then(e => { throw new Error(e.detail); }));
+      toast('Session added', `${date} · ${clockIn}${clockOut ? ' – ' + clockOut : ''}`, 'success');
+    }
+
+    document.getElementById('session-modal-overlay').classList.add('hidden');
+    _editingSessionId = null;
+    loadSessions();
+    loadWeekStats();
+  } catch (e) {
+    toast('Save failed', e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = _editingSessionId ? 'Save Changes' : 'Save Session';
+  }
+}
+
+async function confirmDeleteSession(id, dateStr) {
+  if (!confirm(`Delete session on ${dateStr}? This cannot be undone.`)) return;
+  try {
+    await fetch(`/api/sessions/${id}`, { method: 'DELETE' })
+      .then(r => r.ok ? r.json() : r.json().then(e => { throw new Error(e.detail); }));
+    toast('Session deleted', dateStr, 'success');
+    loadSessions();
+    loadWeekStats();
+  } catch (e) {
+    toast('Delete failed', e.message, 'error');
+  }
+}
