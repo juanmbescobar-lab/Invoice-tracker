@@ -69,3 +69,74 @@ async def get_sessions_by_date_range(db, start, end):
     )
     result = await db.execute(query)
     return list(result.scalars().all())
+
+
+async def create_session(
+    db: AsyncSession, date, clock_in, clock_out=None
+) -> WorkSession:
+    """Create a manual work session."""
+    from datetime import datetime
+
+    raw = None
+    adjusted = None
+    if clock_out:
+        clock_in_dt = datetime.combine(date, clock_in)
+        clock_out_dt = datetime.combine(date, clock_out)
+        raw = calculate_hours(clock_in_dt, clock_out_dt)
+        adjusted = round_up_quarter(raw)
+
+    session = WorkSession(
+        date=date,
+        clock_in=clock_in,
+        clock_out=clock_out,
+        raw_hours=round(raw, 4) if raw else None,
+        adjusted_hours=adjusted,
+    )
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+    return session
+
+
+async def update_session(
+    db: AsyncSession, session_id: int, date, clock_in, clock_out=None
+) -> WorkSession:
+    """Update an existing work session and recalculate hours."""
+    from datetime import datetime
+
+    from sqlalchemy import select
+
+    result = await db.execute(select(WorkSession).where(WorkSession.id == session_id))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise ValueError(f"Session {session_id} not found")
+
+    raw = None
+    adjusted = None
+    if clock_out:
+        clock_in_dt = datetime.combine(date, clock_in)
+        clock_out_dt = datetime.combine(date, clock_out)
+        raw = calculate_hours(clock_in_dt, clock_out_dt)
+        adjusted = round_up_quarter(raw)
+
+    session.date = date
+    session.clock_in = clock_in
+    session.clock_out = clock_out
+    session.raw_hours = round(raw, 4) if raw else None
+    session.adjusted_hours = adjusted
+
+    await db.commit()
+    await db.refresh(session)
+    return session
+
+
+async def delete_session(db: AsyncSession, session_id: int) -> None:
+    """Delete a work session by ID."""
+    from sqlalchemy import select
+
+    result = await db.execute(select(WorkSession).where(WorkSession.id == session_id))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise ValueError(f"Session {session_id} not found")
+    await db.delete(session)
+    await db.commit()

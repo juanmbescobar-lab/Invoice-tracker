@@ -108,10 +108,13 @@
           <div class="card-icon">📅</div>
           Work Sessions
         </div>
-        <div class="week-nav">
-          <button class="icon-btn" onclick="prevSessionWeek()" title="Previous week">&#8249;</button>
-          <span class="week-nav-label" id="sessions-week-label">—</span>
-          <button class="icon-btn" onclick="nextSessionWeek()" title="Next week">&#8250;</button>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="btn btn-sm btn-outline-accent" onclick="openSessionModal()">+ Add Session</button>
+          <div class="week-nav">
+            <button class="icon-btn" onclick="prevSessionWeek()" title="Previous week">&#8249;</button>
+            <span class="week-nav-label" id="sessions-week-label">—</span>
+            <button class="icon-btn" onclick="nextSessionWeek()" title="Next week">&#8250;</button>
+          </div>
         </div>
       </div>
       <div class="table-wrap">
@@ -123,6 +126,7 @@
               <th>Clock Out</th>
               <th class="txt-right">Raw h</th>
               <th class="txt-right">Billed h</th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="sessions-tbody">
@@ -315,6 +319,37 @@
 
   </main>
 </div><!-- /.app-wrapper -->
+
+
+<!-- ── Session Modal ── -->
+<div class="modal-overlay hidden" id="session-modal-overlay" onclick="closeSessionModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="session-modal-title">Add Session</span>
+      <button class="modal-close" onclick="closeSessionModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" for="modal-date">Date</label>
+        <input id="modal-date" class="form-control" type="date" required />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="modal-clock-in">Clock In</label>
+          <input id="modal-clock-in" class="form-control" type="time" required />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="modal-clock-out">Clock Out</label>
+          <input id="modal-clock-out" class="form-control" type="time" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeSessionModal()">Cancel</button>
+      <button class="btn btn-emerald btn-sm" id="modal-save-btn" onclick="saveSession()">Save Session</button>
+    </div>
+  </div>
+</div>
 
 <script src="/static/js/app.js"></script>
 </body>
