@@ -43,6 +43,11 @@ async def frontend():
     return FileResponse("src/static/index.html")
 
 
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker():
+    return FileResponse("src/static/sw.js", media_type="application/javascript")
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
